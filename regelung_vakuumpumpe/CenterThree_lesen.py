@@ -41,30 +41,6 @@ def main():
         getpressure(ser)
         time.sleep(1)
         getpressure(ser)
-        
-        # system = nidaqmx.system.System.local()
-        # for dev in system.devices:
-        #     print(dev.name, "-", dev.product_type)
-        # print("neu start:")
-        # with nidaqmx.Task() as task:
-        #     task.ao_channels.add_ao_voltage_chan(f"{"Dev1_MSA"}/ao0") #a00
-        #     task.ao_channels.add_ao_voltage_chan(f"{"Dev1_MSA"}/ao1")
-            
-        #     print("ao0: 3 , ao1: 3 ")
-        #     task.write([3, 3])  # Volt
-        #     time.sleep(30)
-        #     print("ao0: 0, ao1: 0")
-        #     task.write([0, 0])  # Volt
-        #     time.sleep(30)
-        #     print("ao0: 10, ao1: 0")
-        #     task.write([10, 0])  # Volt
-        #     time.sleep(30)
-        #     print("ao0: 0, ao1: 10")
-        #     task.write([0, 10])  # Volt
-        #     time.sleep(30)
-        #     print("ao0: 0, ao1: 0")
-        #     task.write([0, 0])  # Volt
-        #     time.sleep(30)
 
         input("Enter drücken zum Beenden...")
     except serial.SerialException as e:
