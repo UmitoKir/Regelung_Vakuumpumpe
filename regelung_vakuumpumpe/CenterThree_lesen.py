@@ -26,9 +26,9 @@ to = 1
 def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
     if response:
-        print(f'Antwort: {response}')
+        #print(f'Antwort: {response}')
         values = response.split(",")
-        values = [float(v) for v in values]
+        values = [float(values[i]) for i in (1,3)]
         print(f"Druckwerte: {values}")
         return values
     else:
