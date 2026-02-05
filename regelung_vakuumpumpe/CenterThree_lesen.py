@@ -22,18 +22,22 @@ for p in ports:
 
 br = 38400
 to = 1
+
 def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
-    # nur für Überprüfung ob Response gleich ACK(6) ist      print(f'Response: {ord(response)}')
     if response:
         print(f'Antwort: {response}')
+        values = response.split(",")
+        values = [float(v) for v in values]
+        print(f"Druckwerte: {values}")
+        return values
     else:
         print('keine Antwort. ')
 
 def main():
     try:
         ser = serial.Serial(port=sp, baudrate=br, timeout=to) #stellt Verbindung mit der Vakuumpumpe her (öffnet Chanel)
-        print(f'Verbindung herestellt mit {sp}')
+        print(f'Verbindung hergestellt mit {sp}')
         getpressure(ser)
         time.sleep(1)
         getpressure(ser)
@@ -43,6 +47,7 @@ def main():
         getpressure(ser)
 
         input("Enter drücken zum Beenden...")
+
     except serial.SerialException as e:
         print(f'Fehler: {e}')
     except UnicodeDecodeError as e:
