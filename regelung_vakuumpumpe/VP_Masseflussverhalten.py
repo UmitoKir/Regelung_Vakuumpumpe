@@ -64,7 +64,7 @@ def main():
                     Druck.append(Druck_array[1])
                     zeit.append(time.time())
                 time.sleep(0.1) 
-10          print("ao0: 0 , ao1: 1.5")
+            print("ao0: 0 , ao1: 1.5")
             task.write([0, 1.5])
             time.sleep(5)
             print("ao0: 0 , ao1: 4")
