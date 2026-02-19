@@ -55,14 +55,24 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
             task.write([10, 0])  # Volt
-            while (Druck_array[1]>=0.001):
+            Druck_array = getpressure(ser)
+            jetzt = time.time()
+            #kleiner sicherheitscheck damit in der nächsten Scheife kein Error auftritt
+            while (Druck_array is None):
+                print("warte auf Druckwerte...")
+                Druck_array= getpressure(ser)
+                time.sleep(0.5)
+
+            #loggen der Druckwerte bis es 1 uBar erreicht
+            while (Druck_array[0]>=1 or Druck_array[1]>=0.001): #solange der Druck größer als 1 mbar ist, werden die Werte ausgelesen und in die Liste Druck und zeit gespeichert
                 Druck_array=getpressure(ser)
                 if Druck_array[0]>=1.3:
                     Druck.append(Druck_array[0])
-                    zeit.append(time.time())
+                    zeit.append(time.time()-jetzt)
                 else: 
                     Druck.append(Druck_array[1])
-                    zeit.append(time.time())
+                    zeit.append(time.time()-jetzt)
+                print(f"Zeit: {zeit[-1]}, Druck: {Druck[-1]}")
                 time.sleep(0.1) 
             print("ao0: 0 , ao1: 1.5")
             task.write([0, 1.5])
@@ -89,8 +99,18 @@ def main():
                 print('Verbindung closed. ')
         except Exception as e:
             pass
-    plt.plot(zeit, Druck)
-    plt.title("Druckverlauf")
+    plt.figure(1,figsize=(10, 6))
+    plt.plot(zeit, Druck, color='red', linewidth=1.5)
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.title("Druckverlauf lineare Y-Achse")
+    plt.xlabel("Zeit [s]")
+    plt.ylabel("Druck [mbar]")
+
+    plt.figure(2, figsize=(10, 6))
+    plt.plot(zeit, Druck, color='red', linewidth=1.5)
+    plt.yscale('log')
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.title("Druckverlauf logarithmische Y-Achse")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Druck [mbar]")
     plt.show() 
