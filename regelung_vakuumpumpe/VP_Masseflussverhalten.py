@@ -36,46 +36,8 @@ def getpressure(ser): #"Druckauslesebefehl"
         print('keine Antwort. ')
         return None
 
-dt = 0.1
-I_Anteil = 0.0
-old_pressure = 1000
-
-def PI_regler_step(sollWert, istWert, dt, kp, ki):
-    global I_Anteil 
-    fehler = sollWert - istWert
-    rel_fehler = fehler / sollWert if sollWert != 0 else 0
-    I_Anteil += fehler * dt
-    #Anti-Windup: Begrenzung des I-Anteils
-    I_Anteil = max(-50, min(50, I_Anteil))
-    Stellgröße = kp * fehler + ki * I_Anteil
-    print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
-    return (Stellgröße, rel_fehler)
-
-def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
-    rel_fehler = 1
-    tangente = 1
-    while abs(rel_fehler) > 0.01 or abs(tangente)>0.001: #relativer Fehler kleiner 1%
-        pressure1 = getpressure(ser)
-        if not pressure1:
-            continue
-        istWert = pressure1[0]
-        Stellgröße, rel_fehler= PI_regler_step(sollWert, istWert, dt, kp, ki)
-        ventilspannung = abs(Stellgröße)
-        if Stellgröße<=0:
-            if ventilspannung > 10.0: ventilspannung = 10.0
-            task.write([ventilspannung, 0.0])
-            print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO0: {ventilspannung:.2f} V")
-        elif Stellgröße > 0:
-            if ventilspannung > 7.0: ventilspannung = 7.0
-            task.write([0.0, ventilspannung])
-            print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO1: {ventilspannung:.2f} V")
-        time.sleep(dt)
-
-        tangente = (old_pressure - istWert) / dt
-        print(f"Tangente: {tangente:.4f} mBar/s")
-        old_pressure = istWert
-    print("Ziel erreicht.")
-
+Druck = []
+zeit = []
 
 def main():
     try:
@@ -85,23 +47,25 @@ def main():
         system = nidaqmx.system.System.local()
         for dev in system.devices:
             print(dev.name, "-", dev.product_type)
-        
         print("neu start:")
+
         with nidaqmx.Task() as task:
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
-            sollWert = float(input("Welchen Druckwert möchten sie einstellen?"))
-            print(f"übernommener Druck: {sollWert} mBar")
-            print(type(sollWert))
-            #istWert = getpressure(ser)[0]
-            PI_regler_kopplung(ser, task, sollWert, dt, kp=0.22, ki=0.00625, old_pressure=old_pressure)
-            print("ao0: 0 , ao1: 2 ")
-            task.write([0, 2])  # Volt
-            for i in range(20):
-                getpressure(ser)
+            task.write([10, 0])  # Volt
+            while (Druck_array[1]>=0.001):
+                Druck_array=getpressure(ser)
+                if Druck_array[0]>=1.3:
+                    Druck.append(Druck_array[0])
+                    zeit.append(time.time())
+                else: 
+                    Druck.append(Druck_array[1])
+                    zeit.append(time.time())
                 time.sleep(0.1) 
-            print("ao0: 0 , ao1: 7")
+10      print("ao0: 0 , ao1: 2 ")   
+
+            
             task.write([0, 7])  # Volt
             for i in range(20):
                 getpressure(ser)
