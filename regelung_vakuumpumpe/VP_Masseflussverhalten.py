@@ -7,6 +7,7 @@ import numpy as np
 import nidaqmx
 import serial
 import serial.tools.list_ports
+import matplotlib.pyplot as plt
 
 #der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
 ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
@@ -24,6 +25,9 @@ for p in ports:
 br = 38400
 to = 1
 
+Druck = []
+zeit = []
+
 def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
     if response:
@@ -35,9 +39,6 @@ def getpressure(ser): #"Druckauslesebefehl"
     else:
         print('keine Antwort. ')
         return None
-
-Druck = []
-zeit = []
 
 def main():
     try:
@@ -63,19 +64,21 @@ def main():
                     Druck.append(Druck_array[1])
                     zeit.append(time.time())
                 time.sleep(0.1) 
-10      print("ao0: 0 , ao1: 2 ")   
-
-            
-            task.write([0, 7])  # Volt
-            for i in range(20):
-                getpressure(ser)
-                time.sleep(0.5)
+10          print("ao0: 0 , ao1: 1.5")
+            task.write([0, 1.5])
+            time.sleep(5)
+            print("ao0: 0 , ao1: 4")
+            task.write([0, 4.0])
+            time.sleep(5)
+            print("ao0: 0 , ao1: 7")
+            task.write([0, 7.0])
+            time.sleep(5)
             task.stop()
         input("Enter drücken zum Beenden...")
     except KeyboardInterrupt:
         print("Programm unterbrochen.")
     except serial.SerialException as e:
-        print(f'Fehler: {e}')
+        print(f'Fehler mit der seriellen Verbindung: {e}')
     except UnicodeDecodeError as e:
         print(f'Fehler bei der Dekodierung: {e}')
     finally:
@@ -86,5 +89,10 @@ def main():
                 print('Verbindung closed. ')
         except Exception as e:
             pass
-        
+    plt.plot(zeit, Druck)
+    plt.title("Druckverlauf")
+    plt.xlabel("Zeit [s]")
+    plt.ylabel("Druck [mbar]")
+    plt.show() 
+ 
 main()
