@@ -50,14 +50,16 @@ def PI_regler_step(sollWert, istWert, dt, kp, ki):
     global I_Anteil 
     fehler = sollWert - istWert
     rel_fehler = fehler / sollWert if sollWert != 0 else 0
-    I_Anteil += rel_fehler * dt
-    #Anti-Windup: Begrenzung des I-Anteils
-    I_Anteil = max(-50, min(50, I_Anteil))
-    Stellgröße = kp * rel_fehler + ki * I_Anteil
+    if abs(rel_fehler) <0.1: #I-Anteil erst einschalten wenn rel-fehler unter 15% ist
+        I_Anteil += fehler * dt
+    else:
+        I_Anteil = 0.0
+    
+    Stellgröße = kp * fehler + ki * I_Anteil
     print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
     return (Stellgröße, rel_fehler)
 
-def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
+def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure, jetzt):
     rel_fehler = 1
     tangente = 1
     while abs(rel_fehler) > 0.01 or abs(tangente)>0.001: #relativer Fehler kleiner 1%
@@ -110,11 +112,10 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
         time.sleep(dt)
 
         Druck.append(istWert)
-        zeit.append(time.time())
+        zeit.append(time.time()- jetzt)
         #tangente = ( - istWert) / dt
         #print(f"Tangente: {tangente:.4f} mBar/s")
         #old_pressure = istWert
-        i += 1
     print("Ziel erreicht.")
 
 
@@ -132,11 +133,21 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
+
+            task.write([0, 7])
+            time.sleep(3)
+            task.write([0, 10])
+            time.sleep(3)
+            task.write([0, 0]) 
+            time.sleep(1)
+
             sollWert = float(input("Welchen Druckwert möchten sie einstellen?"))
             print(f"übernommener Druck: {sollWert} mBar")
             print(type(sollWert))
+            jetzt = time.time()
             #istWert = getpressure(ser)[0]
-            PI_regler_kopplung(ser, task, sollWert, dt, kp=0.22, ki=0.00625, old_pressure=old_pressure)
+            kp=(1-(np.exp(1-(sollWert*1000)))) #hi7er noch unklar wie dies ermittelt werden soll
+            PI_regler_kopplung(ser, task, sollWert, dt, kp=kp, ki=0.005, old_pressure=old_pressure, jetzt=jetzt)
             print("ao0: 0 , ao1: 2 ")
             task.write([0, 2])  # Volt
             for i in range(20):
