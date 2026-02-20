@@ -7,6 +7,7 @@ import numpy as np
 import nidaqmx
 import serial
 import serial.tools.list_ports
+import matplotlib.pyplot as plt
 
 #der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
 ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
@@ -39,15 +40,20 @@ def getpressure(ser): #"Druckauslesebefehl"
 dt = 0.1
 I_Anteil = 0.0
 old_pressure = 1000
+Druck = []
+Ableitung = []
+zeit = []
+i = 0
+Ventilspannung = []
 
 def PI_regler_step(sollWert, istWert, dt, kp, ki):
     global I_Anteil 
     fehler = sollWert - istWert
     rel_fehler = fehler / sollWert if sollWert != 0 else 0
-    I_Anteil += fehler * dt
+    I_Anteil += rel_fehler * dt
     #Anti-Windup: Begrenzung des I-Anteils
     I_Anteil = max(-50, min(50, I_Anteil))
-    Stellgröße = kp * fehler + ki * I_Anteil
+    Stellgröße = kp * rel_fehler + ki * I_Anteil
     print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
     return (Stellgröße, rel_fehler)
 
@@ -67,20 +73,25 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
         if pressure1[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
             istWert = pressure1[0] 
             untere_hystere == False
+            print("Sensor HP")
         elif pressure1[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
             istWert = pressure1[1]
             obere_hystere = False
+            print("Sensor LP")
         elif pressure1[1] >= 0.1 and old_pressure < pressure1[1] and old_pressure < 0.1: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
             istWert = pressure1[1]
             untere_hystere = True
+            print("Sensor LP")
         elif pressure1[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
             istWert = pressure1[1]
+            print("Sensor LP")
         elif pressure1[0] < 1.0 and old_pressure >= pressure1[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
             istWert = pressure1[0]
             obere_hystere = True
+            print("Sensor HP")
         elif pressure1[0] < 1.0 and obere_hystere == True: #wenn man
             istWert = pressure1[0]
-        
+            print("Sensor HP")
         
         Stellgröße, rel_fehler= PI_regler_step(sollWert, istWert, dt, kp, ki)
         ventilspannung = abs(Stellgröße)
@@ -94,9 +105,12 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
             print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO1: {ventilspannung:.2f} V")
         time.sleep(dt)
 
-        tangente = (old_pressure - istWert) / dt
-        print(f"Tangente: {tangente:.4f} mBar/s")
-        old_pressure = istWert
+        Druck.append(istWert)
+        zeit.append(time.time())
+        #tangente = ( - istWert) / dt
+        #print(f"Tangente: {tangente:.4f} mBar/s")
+        #old_pressure = istWert
+        i += 1
     print("Ziel erreicht.")
 
 
@@ -145,5 +159,30 @@ def main():
                 print('Verbindung closed. ')
         except Exception as e:
             pass
-        
+    for i in range(len(Druck)-1):
+        tangente = (Druck[i+1] - Druck[i]) / (zeit[i+1] - zeit[i])
+        Ableitung.append(tangente)
+
+    plt.figure(1,figsize=(10, 6))
+    plt.plot(zeit, Druck, color='red', linewidth=1.5)
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.title(f"Druckverlauf zur Eisntellung {sollWert} mBar (lineare Y-Achse)")
+    plt.xlabel("Zeit [s]")
+    plt.ylabel("Druck [mbar]")
+
+    plt.figure(2, figsize=(10, 6))
+    plt.plot(zeit, Druck, color='red', linewidth=1.5)
+    plt.yscale('log')
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.title(f"Druckverlauf zur Einstellung {sollWert} mBar (logarithmische Y-Achse)")
+    plt.xlabel("Zeit [s]")
+    plt.ylabel("Druck [mbar]")
+
+    plt.figure(3, figsize=(10, 6))
+    plt.plot(zeit[:-1], Ableitung, color='red', linewidth=1.5)
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.title(f"Ableitung des Drucks zur Einstellung {sollWert} mBar")
+    plt.xlabel("Zeit [s]")
+    plt.ylabel("Druckableitung [mbar/s]")
+    plt.show() 
 main()
