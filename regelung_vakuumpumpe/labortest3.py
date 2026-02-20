@@ -43,8 +43,8 @@ old_pressure = 1000
 Druck = []
 Ableitung = []
 zeit = []
-i = 0
-Ventilspannung = []
+VentilspannungAO0 = []
+VentilspannungAO1 = []
 
 def PI_regler_step(sollWert, istWert, dt, kp, ki):
     global I_Anteil 
@@ -98,10 +98,14 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
         if Stellgröße<=0:
             if ventilspannung > 10.0: ventilspannung = 10.0
             task.write([ventilspannung, 0.0])
+            VentilspannungAO0.append(ventilspannung)
+            VentilspannungAO1.append(0.0)
             print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO0: {ventilspannung:.2f} V")
         elif Stellgröße > 0:
             if ventilspannung > 7.0: ventilspannung = 7.0
             task.write([0.0, ventilspannung])
+            VentilspannungAO0.append(0.0)
+            VentilspannungAO1.append(ventilspannung)
             print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO1: {ventilspannung:.2f} V")
         time.sleep(dt)
 
@@ -184,5 +188,22 @@ def main():
     plt.title(f"Ableitung des Drucks zur Einstellung {sollWert} mBar")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Druckableitung [mbar/s]")
-    plt.show() 
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
+    ax1.plot(zeit, VentilspannungAO0, color='blue', linewidth=1.5, label='AO0')
+    ax1.set_title(f"Ventilspannung AO0 zur Einstellung {sollWert} mBar")
+    ax1.set_xlabel("Zeit [s]")
+    ax1.set_ylabel("Spannung [V]")
+    ax1.grid(True, which="both", ls="-", alpha=0.5)
+
+    ax2.plot(zeit, VentilspannungAO1, color='red', linewidth=1.5, label='AO1')
+    ax2.set_title(f"Ventilspannung AO1 zur Einstellung {sollWert} mBar")
+    ax2.set_xlabel("Zeit [s]")
+    ax2.set_ylabel("Spannung [V]")
+    ax2.grid(True, which="both", ls="-", alpha=0.5)
+
+    plt.tight_layout()
+
+    plt.show()
+
 main()
