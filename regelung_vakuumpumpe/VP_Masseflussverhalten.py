@@ -26,6 +26,7 @@ br = 38400
 to = 1
 
 Druck = []
+Ableitung = []
 zeit = []
 
 def getpressure(ser): #"Druckauslesebefehl"
@@ -99,6 +100,11 @@ def main():
                 print('Verbindung closed. ')
         except Exception as e:
             pass
+    
+    for i in range(len(Druck)-1):
+        tangente = (Druck[i+1] - Druck[i]) / (zeit[i+1] - zeit[i])
+        Ableitung.append(tangente)
+
     plt.figure(1,figsize=(10, 6))
     plt.plot(zeit, Druck, color='red', linewidth=1.5)
     plt.grid(True, which="both", ls="-", alpha=0.5)
@@ -113,6 +119,13 @@ def main():
     plt.title("Druckverlauf logarithmische Y-Achse")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Druck [mbar]")
+
+    plt.figure(3, figsize=(10, 6))
+    plt.plot(zeit[:-1], Ableitung, color='red', linewidth=1.5)
+    plt.grid(True, which="both", ls="-", alpha=0.5)
+    plt.title("Ableitung des Drucks")
+    plt.xlabel("Zeit [s]")
+    plt.ylabel("Druckableitung [mbar/s]")
     plt.show() 
  
 main()

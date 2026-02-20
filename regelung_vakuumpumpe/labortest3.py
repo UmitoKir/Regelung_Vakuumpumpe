@@ -56,9 +56,32 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure):
     tangente = 1
     while abs(rel_fehler) > 0.01 or abs(tangente)>0.001: #relativer Fehler kleiner 1%
         pressure1 = getpressure(ser)
-        if not pressure1:
-            continue
-        istWert = pressure1[0]
+        while (pressure1 is None):
+                print("warte auf Druckwerte...")
+                pressure1= getpressure(ser)
+                time.sleep(0.1)
+        
+        untere_hystere = False
+        obere_hystere = False
+
+        if pressure1[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
+            istWert = pressure1[0] 
+            untere_hystere == False
+        elif pressure1[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
+            istWert = pressure1[1]
+            obere_hystere = False
+        elif pressure1[1] >= 0.1 and old_pressure < pressure1[1] and old_pressure < 0.1: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
+            istWert = pressure1[1]
+            untere_hystere = True
+        elif pressure1[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
+            istWert = pressure1[1]
+        elif pressure1[0] < 1.0 and old_pressure >= pressure1[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
+            istWert = pressure1[0]
+            obere_hystere = True
+        elif pressure1[0] < 1.0 and obere_hystere == True: #wenn man
+            istWert = pressure1[0]
+        
+        
         Stellgröße, rel_fehler= PI_regler_step(sollWert, istWert, dt, kp, ki)
         ventilspannung = abs(Stellgröße)
         if Stellgröße<=0:
