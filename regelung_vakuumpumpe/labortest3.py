@@ -8,6 +8,7 @@ import nidaqmx
 import serial
 import serial.tools.list_ports
 import matplotlib.pyplot as plt
+from collections import deque
 
 #der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
 ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
@@ -25,6 +26,23 @@ for p in ports:
 br = 38400
 to = 1
 
+dt = 0.05
+I_Anteil = 0.0
+old_pressure = 1000
+Druck = []
+Ableitung = []
+zeit = []
+VentilspannungAO0 = []
+VentilspannungAO1 = []
+fehler_historie = deque(maxlen=25)
+
+#Kp wird ermittelt Bisher: 100mBar -> Kp=0.25-0.3, 200mBar -> Kp=0.0
+#kp= 0.4 * (1- np.exp(-1+(sollWert/1000))) #hi7er noch unklar wie dies ermittelt werden soll
+#kp = 0.3 * np.exp(-(sollWert / 1000))
+kp=0.1152
+ki=0.3  # 0.2 #standartmäßig
+Dauer = 15 #Dauer in Sekunden, die der Druck im Zielbereich bleiben soll, damit das Programm stoppt. (zusätzlich zum relativen Fehler von 1% und der Ableitung des Drucks von 0.001 mBar/s)
+
 def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
     if response:
@@ -37,32 +55,28 @@ def getpressure(ser): #"Druckauslesebefehl"
         print('keine Antwort. ')
         return None
 
-dt = 0.1
-I_Anteil = 0.0
-old_pressure = 1000
-Druck = []
-Ableitung = []
-zeit = []
-VentilspannungAO0 = []
-VentilspannungAO1 = []
 
 def PI_regler_step(sollWert, istWert, dt, kp, ki):
-    global I_Anteil 
-    fehler = sollWert - istWert
-    rel_fehler = fehler / sollWert if sollWert != 0 else 0
-    if abs(rel_fehler) <0.1: #I-Anteil erst einschalten wenn rel-fehler unter 15% ist
-        I_Anteil += fehler * dt
+    global I_Anteil
+    global fehler_historie
+    fehler = istWert - sollWert
+    rel_fehler = fehler /(sollWert) if sollWert != 0 else 0
+    if abs(rel_fehler) <0.15: #I-Anteil erst einschalten wenn rel-fehler unter 15% ist
+        fehler_historie.append(fehler)
+
     else:
-        I_Anteil = 0.0
-    
+        fehler_historie.clear()
+    I_Anteil = sum(fehler_historie) * dt
     Stellgröße = kp * fehler + ki * I_Anteil
     print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
-    return (Stellgröße, rel_fehler)
+    return (Stellgröße, rel_fehler, I_Anteil)
 
-def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure, jetzt):
+def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure, jetzt, Dauer):
     rel_fehler = 1
     tangente = 1
-    while abs(rel_fehler) > 0.01 or abs(tangente)>0.001: #relativer Fehler kleiner 1%
+    Start_zeit = 0
+    while abs(rel_fehler) > 0.01 or abs(tangente)>0.001 or zeit_jetzt - Start_zeit < Dauer: #relativer Fehler kleiner 1%
+        zeit_jetzt = time.time()
         pressure1 = getpressure(ser)
         while (pressure1 is None):
                 print("warte auf Druckwerte...")
@@ -95,27 +109,31 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure, jetzt):
             istWert = pressure1[0]
             print("Sensor HP")
         
-        Stellgröße, rel_fehler= PI_regler_step(sollWert, istWert, dt, kp, ki)
+        Stellgröße, rel_fehler, I_Anteil= PI_regler_step(sollWert, istWert, dt, kp, ki)
         ventilspannung = abs(Stellgröße)
-        if Stellgröße<=0:
+        if Stellgröße>=0:
             if ventilspannung > 10.0: ventilspannung = 10.0
             task.write([ventilspannung, 0.0])
             VentilspannungAO0.append(ventilspannung)
             VentilspannungAO1.append(0.0)
             print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO0: {ventilspannung:.2f} V")
-        elif Stellgröße > 0:
+        elif Stellgröße < 0:
             if ventilspannung > 7.0: ventilspannung = 7.0
             task.write([0.0, ventilspannung])
             VentilspannungAO0.append(0.0)
             VentilspannungAO1.append(ventilspannung)
             print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | Spannung für AO1: {ventilspannung:.2f} V")
+        print(f"Kp: {kp:.4f} | I-Anteil: {I_Anteil:.4f}")
         time.sleep(dt)
 
         Druck.append(istWert)
-        zeit.append(time.time()- jetzt)
-        #tangente = ( - istWert) / dt
+        zeit.append(zeit_jetzt - jetzt)
+        tangente = (old_pressure - istWert) / dt
         #print(f"Tangente: {tangente:.4f} mBar/s")
-        #old_pressure = istWert
+        old_pressure = istWert
+        if abs(rel_fehler) > 0.01 or abs(tangente)>0.001:
+            Start_zeit = zeit_jetzt
+
     print("Ziel erreicht.")
 
 
@@ -135,31 +153,24 @@ def main():
             task.start()
 
             task.write([0, 7])
-            time.sleep(3)
+            time.sleep(5)
             task.write([0, 10])
-            time.sleep(3)
-            task.write([0, 0]) 
-            time.sleep(1)
 
             sollWert = float(input("Welchen Druckwert möchten sie einstellen?"))
             print(f"übernommener Druck: {sollWert} mBar")
             print(type(sollWert))
             jetzt = time.time()
             #istWert = getpressure(ser)[0]
-            kp=(1-(np.exp(1-(sollWert*1000)))) #hi7er noch unklar wie dies ermittelt werden soll
-            PI_regler_kopplung(ser, task, sollWert, dt, kp=kp, ki=0.005, old_pressure=old_pressure, jetzt=jetzt)
-            print("ao0: 0 , ao1: 2 ")
-            task.write([0, 2])  # Volt
-            for i in range(20):
-                getpressure(ser)
-                time.sleep(0.1) 
-            print("ao0: 0 , ao1: 7")
-            task.write([0, 7])  # Volt
-            for i in range(20):
-                getpressure(ser)
-                time.sleep(0.5)
+
+            PI_regler_kopplung(ser, task, sollWert, dt, kp=kp, ki=ki, old_pressure=old_pressure, jetzt=jetzt, Dauer=Dauer)
+            print("ao0: 0 , ao1: 5")
+            task.write([0, 5])  # Volt
+            time.sleep(5)
+            print("ao0: 0 , ao1: 7.5")
+            task.write([0, 7.5])  # Volt
+            time.sleep(5)
             task.stop()
-        input("Enter drücken zum Beenden...")
+        #input("Enter drücken zum Beenden...")
     except KeyboardInterrupt:
         print("Programm unterbrochen.")
     except serial.SerialException as e:
@@ -177,13 +188,13 @@ def main():
     for i in range(len(Druck)-1):
         tangente = (Druck[i+1] - Druck[i]) / (zeit[i+1] - zeit[i])
         Ableitung.append(tangente)
-
+    """"
     plt.figure(1,figsize=(10, 6))
     plt.plot(zeit, Druck, color='red', linewidth=1.5)
     plt.grid(True, which="both", ls="-", alpha=0.5)
     plt.title(f"Druckverlauf zur Eisntellung {sollWert} mBar (lineare Y-Achse)")
     plt.xlabel("Zeit [s]")
-    plt.ylabel("Druck [mbar]")
+    plt.ylabel("Druck [mbar]")"""
 
     plt.figure(2, figsize=(10, 6))
     plt.plot(zeit, Druck, color='red', linewidth=1.5)
@@ -199,7 +210,7 @@ def main():
     plt.title(f"Ableitung des Drucks zur Einstellung {sollWert} mBar")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Druckableitung [mbar/s]")
-
+    
     fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
     ax1.plot(zeit, VentilspannungAO0, color='blue', linewidth=1.5, label='AO0')
     ax1.set_title(f"Ventilspannung AO0 zur Einstellung {sollWert} mBar")
