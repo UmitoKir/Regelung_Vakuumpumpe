@@ -94,7 +94,7 @@ def Druck_abfahren(ser,task, dt, ventilspannung, Startzeit, Startzeit_neuer_Druc
             Druck.append(istWert)
             zeit.append(lokale_zeit)
             old_pressure = istWert
-            print(f"Druck: {istWert:.2f} mBar | Einlassventil: {ventilspannung:.2f} V ")
+            print(f"Druck: {istWert:.4f} mBar | Einlassventil: {ventilspannung:.2f} V ")
             
             while time.time()-Startzeit-lokale_zeit < dt:
                 time.sleep(0.005)
@@ -126,7 +126,7 @@ def main():
             task.write([0, 10])
 
             ventilspannungen1 = [7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-            ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5]
+            ventilspannungen2 = [4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
             Startzeit = time.time()
             
             for i in ventilspannungen2:
