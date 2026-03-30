@@ -40,7 +40,7 @@ fehler_historie = deque(maxlen=25)
 #kp= 0.4 * (1- np.exp(-1+(sollWert/1000))) #hi7er noch unklar wie dies ermittelt werden soll
 #kp = 0.3 * np.exp(-(sollWert / 1000))
 kp=0.1152
-ki=0.3  # 0.2 #standartmäßig
+ki=0  # 0.2 #standartmäßig
 Dauer = 15 #Dauer in Sekunden, die der Druck im Zielbereich bleiben soll, damit das Programm stoppt. (zusätzlich zum relativen Fehler von 1% und der Ableitung des Drucks von 0.001 mBar/s)
 
 def getpressure(ser): #"Druckauslesebefehl"
@@ -71,11 +71,11 @@ def PI_regler_step(sollWert, istWert, dt, kp, ki):
     print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
     return (Stellgröße, rel_fehler, I_Anteil)
 
-def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure, jetzt, Dauer):
+def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, jetzt, Dauer):
     rel_fehler = 1
     tangente = 1
-    Start_zeit = 0
-    aktuelle_spannung = 0
+    Start_zeit = 10e6
+    global old_pressure
     while abs(rel_fehler) > 0.01 or abs(tangente)>0.001 or zeit_jetzt - Start_zeit < Dauer: #relativer Fehler kleiner 1%
         zeit_jetzt = time.time()
         pressure1 = getpressure(ser)
@@ -111,29 +111,21 @@ def PI_regler_kopplung(ser,task, sollWert, dt, kp, ki, old_pressure, jetzt, Daue
             print("Sensor HP")
         
         Stellgröße, rel_fehler, I_Anteil= PI_regler_step(sollWert, istWert, dt, kp, ki)
-        ventilspannung = abs(Stellgröße)
+        
+        ventilspannung1 = 10.0/(1+abs(Stellgröße))
+        ventilspannung2 = abs(Stellgröße)
         if Stellgröße>=0:
-            if ventilspannung > 10.0: ventilspannung = 10.0
-            """if aktuelle_spannung <= ventilspannung:
-                aktuelle_spannung += 0.1 #ventilspannung * 0.1  # sanfte Erhöhung der Spannung
-                if aktuelle_spannung > ventilspannung:
-                    aktuelle_spannung = ventilspannung"""
-            aktuelle_spannung = ventilspannung
-            task.write([aktuelle_spannung, 0.0])
-            Ventilspannung_Durchlass.append(aktuelle_spannung)
-            Ventilspannung_Einlass.append(10.0 - aktuelle_spannung)
-            print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | U-Durchlassventil: {aktuelle_spannung:.2f} V| U-Einlassventil: {10.0 - aktuelle_spannung:.2f} V")
+            if ventilspannung1 > 7.5: ventilspannung1 = 7.5               
+            task.write([10.0, ventilspannung1])
+            Ventilspannung_Durchlass.append(10.0)
+            Ventilspannung_Einlass.append(ventilspannung1)
+            print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | U-Durchlassventil: 10.0 V| U-Einlassventil: {ventilspannung1:.2f} V")
         elif Stellgröße < 0:
-            if ventilspannung > 7.0: ventilspannung = 7.0
-            """ if aktuelle_spannung <= ventilspannung:
-                aktuelle_spannung += 0.1 #ventilspannung * 0.1  # sanfte Erhöhung der Spannung
-                if aktuelle_spannung > ventilspannung:
-                    aktuelle_spannung = ventilspannung"""
-            aktuelle_spannung = ventilspannung
-            task.write([0.0, ventilspannung])
-            Ventilspannung_Durchlass.append(10.0-ventilspannung)
-            Ventilspannung_Einlass.append(ventilspannung)
-            print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | U-Einlassventil: {aktuelle_spannung:.2f} V | U-Durchlassventil: {10.0 - aktuelle_spannung:.2f} V")
+            if ventilspannung2 > 7.3: ventilspannung2 = 7.3
+            task.write([10.0, ventilspannung2])
+            Ventilspannung_Durchlass.append(10.0)
+            Ventilspannung_Einlass.append(ventilspannung2)
+            print(f"Ist {istWert:.2f} | Soll {sollWert:.2f} | U-Durchlassventil:10.0 V| U-Einlassventil: {ventilspannung1:.2f} V ")
         print(f"Kp: {kp:.4f} | I-Anteil: {I_Anteil:.4f}")
         time.sleep(dt)
 
@@ -163,7 +155,7 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
 
-            task.write([0, 7])
+            task.write([0, 7.25])
             time.sleep(5)
             task.write([0, 10])
 
@@ -173,7 +165,7 @@ def main():
             jetzt = time.time()
             #istWert = getpressure(ser)[0]
 
-            PI_regler_kopplung(ser, task, sollWert, dt, kp=kp, ki=ki, old_pressure=old_pressure, jetzt=jetzt, Dauer=Dauer)
+            PI_regler_kopplung(ser, task, sollWert, dt, kp=kp, ki=ki, jetzt=jetzt, Dauer=Dauer)
             print("ao0: 0 , ao1: 5")
             task.write([0, 5])  # Volt
             time.sleep(5)

@@ -21,7 +21,7 @@ for p in ports:
 
 br = 38400
 to = 1
-def getpressure(): #"Druckauslesebefehl"
+def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
     # nur für Überprüfung ob Response gleich ACK(6) ist      print(f'Response: {ord(response)}')
     if response:
@@ -33,7 +33,7 @@ def main():
     try:
         ser = serial.Serial(port=sp, baudrate=br, timeout=to) #stellt Verbindung mit der Vakuumpumpe her (öffnet Chanel)
         print(f'Verbindung herestellt mit {sp}')
-        getpressure()
+        getpressure(ser)
 
         system = nidaqmx.system.System.local()
         for dev in system.devices:
@@ -43,21 +43,15 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"{"Dev1_MSA"}/ao0") #a00
             task.ao_channels.add_ao_voltage_chan(f"{"Dev1_MSA"}/ao1")
             
-            print("ao0: 3 , ao1: 3 ")
-            task.write([3, 3])  # Volt
-            time.sleep(30)
-            print("ao0: 0, ao1: 0")
-            task.write([0, 0])  # Volt
-            time.sleep(30)
-            print("ao0: 10, ao1: 0")
-            task.write([10, 0])  # Volt
-            time.sleep(30)
+            print("ao0: 0 , ao1: 10 ")
+            task.write([0, 10])  # Volt
+            time.sleep(10)
+            print("ao0: 6, ao1: 5")
+            task.write([6, 5])  # Volt
+            time.sleep(300)
             print("ao0: 0, ao1: 10")
             task.write([0, 10])  # Volt
-            time.sleep(30)
-            print("ao0: 0, ao1: 0")
-            task.write([0, 0])  # Volt
-            time.sleep(30)
+            time.sleep(15)
 
         print("for-loop beendet.")
         input("Enter drücken zum Beenden...")
@@ -71,3 +65,4 @@ def main():
             print('Verbindung closed. ')
 
 
+main()
