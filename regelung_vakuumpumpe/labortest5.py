@@ -10,8 +10,6 @@ import serial.tools.list_ports
 import matplotlib.pyplot as plt
 from collections import deque
 
-from regelung_vakuumpumpe.labortest4 import Dauer
-
 #der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
 ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
 sp=None
@@ -35,7 +33,7 @@ Ableitung = []
 zeit = []
 Ventilspannung_Durchlass = []
 Ventilspannung_Einlass = []
-Dauer = 600.0
+Dauer = 300.0
 
 def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
@@ -59,7 +57,7 @@ def Druck_abfahren(ser,task, dt, ventilspannung, Startzeit, Startzeit_neuer_Druc
         untere_hystere = False
         obere_hystere = False
         
-        task.write([10.0, ventilspannung])
+        task.write([ventilspannung, 0])
         
         while(lokale_zeit < Endzeit):
             pressure = getpressure(ser)
@@ -127,10 +125,11 @@ def main():
             time.sleep(5)
             task.write([0, 10])
 
-            ventilspannungen = [7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+            ventilspannungen1 = [7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+            ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5]
             Startzeit = time.time()
             
-            for i in ventilspannungen:
+            for i in ventilspannungen2:
                 Startzeit_neuer_Druck = time.time() - Startzeit
                 aktuelle_zeit = time.time() - Startzeit
                 Druck_abfahren(ser,task, dt, i, Startzeit, Startzeit_neuer_Druck, aktuelle_zeit)
