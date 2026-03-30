@@ -29,14 +29,12 @@ br = 38400
 to = 1
 
 dt = 0.1
-I_Anteil = 0.0
 old_pressure = 1000
 Druck = []
 Ableitung = []
 zeit = []
 Ventilspannung_Durchlass = []
 Ventilspannung_Einlass = []
-fehler_historie = deque(maxlen=25)
 Dauer = 600.0
 
 def getpressure(ser): #"Druckauslesebefehl"
@@ -52,23 +50,26 @@ def getpressure(ser): #"Druckauslesebefehl"
         return None
 
 
-def Druck_abfahren(ser,task, dt, ventilspannung, Startzeit, Startzeit_neuer_Druck, zeit):
+def Druck_abfahren(ser,task, dt, ventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit):
         global old_pressure
         global Dauer
+        global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass
+        Endzeit = Startzeit_neuer_Druck + Dauer
+        
+        untere_hystere = False
+        obere_hystere = False
+        
         task.write([10.0, ventilspannung])
-        while(zeit-Startzeit_neuer_Druck < Dauer):
+        
+        while(lokale_zeit < Endzeit):
             pressure = getpressure(ser)
             while (pressure is None):
                     print("warte auf Druckwerte...")
                     pressure = getpressure(ser)
-                    time.sleep(dt)
-
-            untere_hystere = False
-            obere_hystere = False
-
+                    time.sleep(0.01)
             if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
                 istWert = pressure[0] 
-                untere_hystere == False
+                untere_hystere = False
                 print("Sensor HP")
             elif pressure[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
                 istWert = pressure[1]
@@ -79,7 +80,7 @@ def Druck_abfahren(ser,task, dt, ventilspannung, Startzeit, Startzeit_neuer_Druc
                 untere_hystere = True
                 print("Sensor LP")
             elif pressure[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
-                istWert = pressure1[1]
+                istWert = pressure[1]
                 print("Sensor LP")
             elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
                 istWert = pressure[0]
@@ -93,13 +94,13 @@ def Druck_abfahren(ser,task, dt, ventilspannung, Startzeit, Startzeit_neuer_Druc
             Ventilspannung_Durchlass.append(10.0)
             Ventilspannung_Einlass.append(ventilspannung)
             Druck.append(istWert)
-            zeit.append(zeit)
-            tangente = (old_pressure - istWert) / dt
+            zeit.append(lokale_zeit)
             old_pressure = istWert
             print(f"Druck: {istWert:.2f} mBar | Einlassventil: {ventilspannung:.2f} V ")
-            while time.time()-zeit < dt:
-                time.sleep(0.01)
-            zeit = time.time() - Startzeit
+            
+            while time.time()-Startzeit-lokale_zeit < dt:
+                time.sleep(0.005)
+            lokale_zeit = time.time() - Startzeit
 
 
        
@@ -131,8 +132,8 @@ def main():
             
             for i in ventilspannungen:
                 Startzeit_neuer_Druck = time.time() - Startzeit
-                zeit = time.time() - Startzeit
-                Druck_abfahren(ser,task, dt, i, Startzeit, Startzeit_neuer_Druck, zeit)
+                aktuelle_zeit = time.time() - Startzeit
+                Druck_abfahren(ser,task, dt, i, Startzeit, Startzeit_neuer_Druck, aktuelle_zeit)
 
             
             print("ao0: 0 , ao1: 5")
