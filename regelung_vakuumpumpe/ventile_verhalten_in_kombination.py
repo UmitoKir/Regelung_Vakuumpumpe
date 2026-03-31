@@ -35,18 +35,6 @@ Ventilspannung_Durchlass = []
 Ventilspannung_Einlass = []
 Dauer = 300.0
 
-ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
-test_konfigurationen = [
-    ("Einlass", ventilspannungen1),
-    ("Einlass", ventilspannungen2),
-    ("Durchlass", ventilspannungen2),
-    ("Durchlass", ventilspannungen1)
-]
-
-untere_hystere = False
-obere_hystere = False
-
 def getpressure(ser): #"Druckauslesebefehl"
     response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
     if response:
@@ -60,90 +48,64 @@ def getpressure(ser): #"Druckauslesebefehl"
         return None
 
 
-def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit):
+def Druck_abfahren(ser,task, dt, durchlassventilspannung, einlassventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit):
         global old_pressure
         global Dauer
         global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass
         Endzeit = Startzeit_neuer_Druck + Dauer
-        tangent_counter = 0
-        compare_pressure = 0.0
-
         
-        if wahl == "Einlass":
-            task.write([10, ventilspannung])
-            v_durch, v_ein = 10, ventilspannung
-        elif wahl == "Durchlass":
-            task.write([ventilspannung, 0])
-            v_durch, v_ein = ventilspannung, 0
-
+        untere_hystere = False
+        obere_hystere = False
+        task.write([durchlassventilspannung, einlassventilspannung])
+        
         while(lokale_zeit < Endzeit):
             pressure = getpressure(ser)
             while (pressure is None):
                     print("warte auf Druckwerte...")
-                    time.sleep(0.01)
                     pressure = getpressure(ser)
+                    time.sleep(0.01)
+            if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
+                istWert = pressure[0] 
+                untere_hystere = False
+                print("Sensor HP")
+            elif pressure[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
+                istWert = pressure[1]
+                obere_hystere = False
+                print("Sensor LP")
+            elif pressure[1] >= 0.1 and old_pressure < pressure[1] and old_pressure < 0.1: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
+                istWert = pressure[1]
+                untere_hystere = True
+                print("Sensor LP")
+            elif pressure[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
+                istWert = pressure[1]
+                print("Sensor LP")
+            elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
+                istWert = pressure[0]
+                obere_hystere = True
+                print("Sensor HP")
+            elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
+                istWert = pressure[0]
+                print("Sensor HP")
 
-            istWert = sensorwahl_mit_hysterese(pressure)   
-            Ventilspannung_Durchlass.append(v_durch)
-            Ventilspannung_Einlass.append(v_ein)
+        
+            Ventilspannung_Durchlass.append(durchlassventilspannung)
+            Ventilspannung_Einlass.append(einlassventilspannung)
             Druck.append(istWert)
             zeit.append(lokale_zeit)
-            schwankung = (istWert - old_pressure)/old_pressure
-            schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 1
-            
-            if abs(schwankung) < 0.001 and abs(schwankung_in_relation_zum_vergleich) < 0.005 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
-                tangent_counter += 1
-            elif (abs(schwankung) > 0.001 or abs(schwankung_in_relation_zum_vergleich) > 0.005) and tangent_counter >0:
-                tangent_counter = 0
-                compare_pressure = istWert
-            elif tangent_counter >= 100:  # Wenn die Ableitung wieder klein ist, aber vorher groß war
-                tangent_counter = 0
-                break
             old_pressure = istWert
-            print(f"Druck: {istWert:.5f} mBar | Einlassventil: {ventilspannung:.2f} V ")
+            print(f"Druck: {istWert:.4f} mBar | Einlassventil: {einlassventilspannung:.2f} V  | Durchlassventil: {durchlassventilspannung:.2f} V ")
             
             while time.time()-Startzeit-lokale_zeit < dt:
                 time.sleep(0.005)
             lokale_zeit = time.time() - Startzeit
 
-def sensorwahl_mit_hysterese(pressure):
-    global untere_hystere, obere_hystere, old_pressure
 
-    istWert = 0.0
-
-    if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
-        istWert = pressure[0] 
-        untere_hystere = False
-        print("Sensor HP")
-    elif pressure[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
-        istWert = pressure[1]
-        obere_hystere = False
-        print("Sensor LP")
-    elif pressure[1] >= 0.1 and old_pressure < pressure[1] and old_pressure < 0.1: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
-        istWert = pressure[1]
-        untere_hystere = True
-        print("Sensor LP")
-    elif pressure[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
-        istWert = pressure[1]
-        print("Sensor LP")
-    elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
-        istWert = pressure[0]
-        obere_hystere = True
-        print("Sensor HP")
-    elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
-        istWert = pressure[0]
-        print("Sensor HP")
-    if istWert < 0:
-        istWert = 0.0
-    return istWert
-
+       
        
 
 
 
 def main():
-    global ventilspannungen1, ventilspannungen2
-    global test_konfigurationen
     try:
         ser = serial.Serial(port=sp, baudrate=br, timeout=to) #stellt Verbindung mit der Vakuumpumpe her (öffnet Chanel)
         print(f'Verbindung hergestellt mit {sp}')
@@ -158,20 +120,26 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
 
-            #task.write([0, 7.25])
-            #time.sleep(5)
+            task.write([10.0, 0])
+            time.sleep(10)
             #task.write([0, 10])
 
-           
+            ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+            ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
             Startzeit = time.time()
-
-            for wahl, spannungs_liste in test_konfigurationen:
-                for spannung in spannungs_liste[:]:
+            for j in range (20):
+                for i in range(20):
                     Startzeit_neuer_Druck = time.time() - Startzeit
-                    Druck_abfahren(ser,task, dt, wahl, spannung, Startzeit, Startzeit_neuer_Druck, Startzeit_neuer_Druck)
+                    aktuelle_zeit = time.time() - Startzeit
+                    Druck_abfahren(ser,task, dt, ventilspannungen2[i],ventilspannungen1[j], Startzeit, Startzeit_neuer_Druck, aktuelle_zeit)
 
-                      
-
+            
+            print("ao0: 0 , ao1: 5")
+            task.write([0, 5])  # Volt
+            time.sleep(20)
+            print("ao0: 0 , ao1: 7.5")
+            task.write([0, 7.5])  # Volt
+            time.sleep(10)
             task.stop()
         #input("Enter drücken zum Beenden...")
     except KeyboardInterrupt:
