@@ -27,14 +27,14 @@ for p in ports:
 br = 38400
 to = 1
 
-dt = 0.1
+dt = 1
 old_pressure = 1000
 Druck = []
 Ableitung = []
 zeit = []
 Ventilspannung_Durchlass = []
 Ventilspannung_Einlass = []
-Dauer = 1800.0
+Dauer = 1200.0
 
 ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
 ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
@@ -64,13 +64,10 @@ def getpressure(ser): #"Druckauslesebefehl"
 
 
 def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename):
-        global old_pressure
-        global Dauer
-        global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass
+        global old_pressure, Dauer, zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, csv_buffer
         Endzeit = Startzeit_neuer_Druck + Dauer
         tangent_counter = 0
-        compare_pressure = 0.0
-        global csv_buffer
+        compare_pressure = old_pressure
         
         if wahl == "Einlass":
             task.write([10, ventilspannung])
@@ -81,36 +78,36 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
 
         while(tangent_counter < 100) and (lokale_zeit < Endzeit):
             pressure = getpressure(ser)
-            while (pressure is None):
-                    print("warte auf Druckwerte...")
-                    time.sleep(0.01)
-                    pressure = getpressure(ser)
+            if pressure is None:
+                continue
 
-            istWert = sensorwahl_mit_hysterese(pressure)   
+            istWert = sensorwahl_mit_hysterese(pressure) 
+
+            #Daten in die Listen speichern  
             Ventilspannung_Durchlass.append(v_durch)
             Ventilspannung_Einlass.append(v_ein)
             Druck.append(istWert)
             zeit.append(lokale_zeit)
-
-           
             
+            #Stabilitätscheck
             schwankung = (istWert - old_pressure)/old_pressure
             schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 1
             
-            if abs(schwankung) < 0.001 and abs(schwankung_in_relation_zum_vergleich) < 0.005 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
+            if abs(schwankung) < 0.005 and abs(schwankung_in_relation_zum_vergleich) < 0.02 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
-            elif (abs(schwankung) > 0.001 or abs(schwankung_in_relation_zum_vergleich) > 0.005) and tangent_counter >0:
+            elif (abs(schwankung) > 0.002 or abs(schwankung_in_relation_zum_vergleich) > 0.01) and tangent_counter >=0:
                 tangent_counter = 0
                 compare_pressure = istWert
             
             druckeinstelldauer = lokale_zeit - Startzeit_neuer_Druck
-
-            if tangent_counter >= 100:
-                aktuelle_zeile =[f"{lokale_zeit: .3f}", f"{istWert: .5f}", f"{v_durch: .2f}", f"{v_ein: .2f}", wahl, f"{druckeinstelldauer: .3f}"]
-            else :
-                aktuelle_zeile =[f"{lokale_zeit: .3f}", f"{istWert: .5f}", f"{v_durch: .2f}", f"{v_ein: .2f}", wahl, ""]
             
-            csv_buffer.append(aktuelle_zeile)
+            t_str = f"{lokale_zeit:.3f}".replace('.', ',')
+            p_str = f"{istWert:.5f}".replace('.', ',')
+            vd_str = f"{v_durch:.2f}".replace('.', ',')
+            ve_str = f"{v_ein:.2f}".replace('.', ',')
+            dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',') if tangent_counter >= 100 else ""
+            
+            csv_buffer.append([t_str, p_str, vd_str, ve_str, wahl, dur_str])
 
             try: 
                 with open (filename, mode='a', newline='') as f:
@@ -123,10 +120,11 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
                 pass
             
             old_pressure = istWert
-            print(f"Wahl des Ventils: {wahl} | Ventil: {ventilspannung:.2f} V | Druck: {istWert:.5f} mBar | Dauer der Stufe: {druckeinstelldauer:.3f} s | Tangent Counter: {tangent_counter}")
-            
-            while time.time()-Startzeit-lokale_zeit < dt:
-                time.sleep(0.005)
+            print(f"Wahl des Ventils: {wahl} | Ventil: {ventilspannung:.2f} V | Druck: {istWert:.5f} mBar | Dauer der Stufe: {druckeinstelldauer:.3f} s | Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f}")
+            print()
+
+            while time.time() - Startzeit - lokale_zeit < dt:
+                time.sleep(0.001)
             lokale_zeit = time.time() - Startzeit
 
 
@@ -138,25 +136,25 @@ def sensorwahl_mit_hysterese(pressure):
     if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
         istWert = pressure[0] 
         untere_hystere = False
-        print("Sensor HP")
+        #print("Sensor HP")
     elif pressure[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
         istWert = pressure[1]
         obere_hystere = False
-        print("Sensor LP")
+        #print("Sensor LP")
     elif pressure[1] >= 0.1 and old_pressure < pressure[1] and old_pressure < 0.1: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
         istWert = pressure[1]
         untere_hystere = True
-        print("Sensor LP")
+        #print("Sensor LP")
     elif pressure[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
         istWert = pressure[1]
-        print("Sensor LP")
+        #print("Sensor LP")
     elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
         istWert = pressure[0]
         obere_hystere = True
-        print("Sensor HP")
+        #print("Sensor HP")
     elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
         istWert = pressure[0]
-        print("Sensor HP")
+        #print("Sensor HP")
     if istWert < 0:
         istWert = old_pressure
     return istWert
@@ -215,7 +213,7 @@ def main():
                 print('Verbindung closed. ')
         except Exception:
             pass
-        
+
     for i in range(len(Druck)-1):
         tangente = (Druck[i+1] - Druck[i]) / (zeit[i+1] - zeit[i])
         Ableitung.append(tangente)
