@@ -43,14 +43,17 @@ def main():
             #task.write([10, 0]) # mit ctrl+C programm abbrechen diese zeile und nächste auskommetieren und dann programm neu starten.
             #time.sleep(5000)  # diesen auch auskommentieren
             print("ao0: 0 , ao1: 1.5")
-            task.write([0, 1.5])
+            task.write([0, 2])
             time.sleep(5)
+            print("ao0: 0 , ao1: 3")
+            task.write([0, 3])
+            time.sleep(15)
             print("ao0: 0 , ao1: 4")
             task.write([0, 4.0])
-            time.sleep(5)
+            time.sleep(20)
             print("ao0: 0 , ao1: 7")
             task.write([0, 7.0])
-            time.sleep(5)
+            time.sleep(30)
             task.stop()
         input("Enter drücken zum Beenden...")
     except KeyboardInterrupt:

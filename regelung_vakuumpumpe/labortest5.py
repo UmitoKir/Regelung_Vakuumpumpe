@@ -16,7 +16,7 @@ ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen exis
 sp=None
 #durch Vergleichen der Namen von allen Anschlüssen mit dem Namen vom Adapter RS232 zu usb wählt es den richtigen Port aus.
 print(f'Liste der angeschlossenen Geräte: {ports}')
-for p in ports:
+for p in ports: 
     print(p)
     if 'ATEN'in p.description:
         print(f'this is the Device: {p.device}')
@@ -67,7 +67,6 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
         global old_pressure, Dauer, zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, csv_buffer
         Endzeit = Startzeit_neuer_Druck + Dauer
         tangent_counter = 0
-        compare_pressure = old_pressure
         
         if wahl == "Einlass":
             task.write([10, ventilspannung])
@@ -75,6 +74,13 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
         elif wahl == "Durchlass":
             task.write([ventilspannung, 0])
             v_durch, v_ein = ventilspannung, 0
+        
+        pressure = getpressure(ser)
+        while pressure is None:
+            time.sleep(0.01)
+            pressure = getpressure(ser)
+
+        compare_pressure = sensorwahl_mit_hysterese(pressure) 
 
         while(tangent_counter < 100) and (lokale_zeit < Endzeit):
             pressure = getpressure(ser)
@@ -91,7 +97,7 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             
             #Stabilitätscheck
             schwankung = (istWert - old_pressure)/old_pressure
-            schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 1
+            schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure 
             
             if abs(schwankung) < 0.005 and abs(schwankung_in_relation_zum_vergleich) < 0.02 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
@@ -137,15 +143,15 @@ def sensorwahl_mit_hysterese(pressure):
         istWert = pressure[0] 
         untere_hystere = False
         #print("Sensor HP")
-    elif pressure[1]< 0.1: #ab <0.1mBar immer sensor 2 verwenden
+    elif pressure[1]< 0.5: #ab <0.5mBar immer sensor 2 verwenden
         istWert = pressure[1]
         obere_hystere = False
         #print("Sensor LP")
-    elif pressure[1] >= 0.1 and old_pressure < pressure[1] and old_pressure < 0.1: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
+    elif pressure[1] >= 0.5 and old_pressure < pressure[1] and old_pressure < 0.5: #wenn man von < 0.5mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
         istWert = pressure[1]
         untere_hystere = True
         #print("Sensor LP")
-    elif pressure[1] >= 0.1 and untere_hystere == True: #wenn man von < 0.1mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
+    elif pressure[1] >= 0.5 and untere_hystere == True: #wenn man von < 0.5mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
         istWert = pressure[1]
         #print("Sensor LP")
     elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
@@ -155,8 +161,8 @@ def sensorwahl_mit_hysterese(pressure):
     elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
         istWert = pressure[0]
         #print("Sensor HP")
-    if istWert < 0:
-        istWert = old_pressure
+    if istWert <=0:
+        istWert = 1e-6
     return istWert
 
        
