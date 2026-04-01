@@ -1,0 +1,6 @@
+Zeit_s;Druck_mBar;V_Durchlass;V_Einlass;Modus;Dauer bis Druckstabilität_s
+0,000;0,00100;10,00;10,00;Einlass;
+1,001;0,00100;10,00;10,00;Einlass;
+2,001;2,05980;10,00;10,00;Einlass;
+3,002;349,00000;10,00;10,00;Einlass;
+4,003;758,18000;10,00;10,00;Einlass;

@@ -34,6 +34,10 @@ Ableitung = []
 zeit = []
 Ventilspannung_Durchlass = []
 Ventilspannung_Einlass = []
+raw_array = []
+resp_array = []
+response_array = [] 
+
 Dauer = 1200.0
 
 ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
@@ -51,17 +55,29 @@ obere_hystere = False
 csv_buffer = []
 
 def getpressure(ser): #"Druckauslesebefehl"
-    response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
-    if response:
-        #print(f'Antwort: {response}')
-        values = response.split(",")
-        values = [float(values[i]) for i in (1,3)]
-        #print(f"Druckwerte: {values}")
-        return values
-    else:
-        print('keine Antwort. ')
-        return None
+    global raw_array, resp_array, response_array
+    try:
+        raw = ser.readline()
+        raw_array.append(raw)
+        resp = raw.decode('utf-8') #liest die Werte vom CenterThree
+        resp_array.append(resp)
+        response = resp.strip()
+        response_array.append(response)
 
+        #response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
+        if response:
+            #print(f'Antwort: {response}')
+            values = response.split(",")
+            values = [float(values[i]) for i in (1,3)]
+            #print(f"Druckwerte: {values}")
+            return values
+        else:
+            print('keine Antwort. ')
+            return None
+        return None
+    except (ValueError, UnicodeDecodeError, IndexError) as e:
+        print(f"Fehler bei der Druckauslesung: {e} | {response if 'response' in locals() else 'unbekannt'}" )
+        return None
 
 def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename):
         global old_pressure, Dauer, zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, csv_buffer
@@ -82,7 +98,7 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
 
         compare_pressure = sensorwahl_mit_hysterese(pressure) 
 
-        while(tangent_counter < 100) and (lokale_zeit < Endzeit):
+        while(tangent_counter < 100) and (lokale_zeit < Endzeit) and istWert >= 0.0001 :
             pressure = getpressure(ser)
             if pressure is None:
                 continue
@@ -99,9 +115,9 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             schwankung = (istWert - old_pressure)/old_pressure
             schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure 
             
-            if abs(schwankung) < 0.005 and abs(schwankung_in_relation_zum_vergleich) < 0.02 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
+            if abs(schwankung) < 0.01 and abs(schwankung_in_relation_zum_vergleich) < 0.04 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
-            elif (abs(schwankung) > 0.002 or abs(schwankung_in_relation_zum_vergleich) > 0.01) and tangent_counter >=0:
+            elif (abs(schwankung) > 0.01 or abs(schwankung_in_relation_zum_vergleich) > 0.04) and tangent_counter >=0:
                 tangent_counter = 0
                 compare_pressure = istWert
             
@@ -111,9 +127,12 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             p_str = f"{istWert:.5f}".replace('.', ',')
             vd_str = f"{v_durch:.2f}".replace('.', ',')
             ve_str = f"{v_ein:.2f}".replace('.', ',')
-            dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',') if tangent_counter >= 100 else ""
-            
-            csv_buffer.append([t_str, p_str, vd_str, ve_str, wahl, dur_str])
+            dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',') if (tangent_counter >= 100 or lokale_zeit > Endzeit - 1.5) else ""
+            raw_str = f"{raw_array[-1].decode('utf-8').strip() if raw_array else ''}".replace('.', ',')
+            resp_str = f"{resp_array[-1].strip() if resp_array else ''}".replace('.', ',')
+            response_str = f"{response_array[-1] if response_array else ''}".replace('.', ',')
+
+            csv_buffer.append([t_str, p_str, vd_str, ve_str, wahl, dur_str, raw_str, resp_str, response_str])
 
             try: 
                 with open (filename, mode='a', newline='') as f:
@@ -162,7 +181,7 @@ def sensorwahl_mit_hysterese(pressure):
         istWert = pressure[0]
         #print("Sensor HP")
     if istWert <=0:
-        istWert = 1e-6
+        istWert = 1e-4
     return istWert
 
        
@@ -175,7 +194,7 @@ def main():
     filename = f"messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
     with open(filename, mode='w', newline='') as f:
         writer = csv.writer(f, delimiter=';')
-        writer.writerow(['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Modus', 'Dauer bis Druckstabilität_s'])
+        writer.writerow(['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Modus', 'Dauer bis Druckstabilitaet_s', 'raw', 'resp', 'response'])
 
     try:
         ser = serial.Serial(port=sp, baudrate=br, timeout=to) #stellt Verbindung mit der Vakuumpumpe her (öffnet Chanel)
