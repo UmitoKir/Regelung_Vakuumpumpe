@@ -114,12 +114,8 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
                 fehler_grenze = 0.02
             elif istWert < 5*1e-3:
                 fehler_grenze = 0.01
-            elif istWert < 1e-2:
-                fehler_grenze = 0.002
-            elif istWert < 5* 1e-2:
-                fehler_grenze = 0.001
             else: 
-                fehler_grenze = 0.0005  
+                fehler_grenze = 0.002  
 
             rel_fehler_grenze = 3 * fehler_grenze
 

@@ -70,7 +70,7 @@ def getpressure(ser): #"Druckauslesebefehl"
         print(f"Fehler bei der Druckauslesung: {e} | {response if 'response' in locals() else 'unbekannt'}" )
         return None
 
-def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename):
+def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename, current_step, total_steps):
         
         global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array
         Endzeit = Startzeit_neuer_Druck + Dauer
@@ -86,7 +86,7 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
         istWert = sensorwahl_mit_hysterese(pressure)
         compare_pressure =  istWert
 
-        while(tangent_counter < 100) and (lokale_zeit < Endzeit) and (istWert >= 0.0005):
+        while(tangent_counter < 60) and (lokale_zeit < Endzeit) and (istWert >= 0.0005):
             pressure = getpressure(ser)
             if pressure is None:
                 while time.time() - Startzeit - lokale_zeit < dt:
@@ -105,12 +105,8 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
                 fehler_grenze = 0.02
             elif istWert < 5*1e-3:
                 fehler_grenze = 0.01
-            elif istWert < 1e-2:
-                fehler_grenze = 0.002
-            elif istWert < 5* 1e-2:
-                fehler_grenze = 0.001
             else: 
-                fehler_grenze = 0.0005  
+                fehler_grenze = 0.002
 
             rel_fehler_grenze = 3 * fehler_grenze
 
@@ -126,13 +122,13 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
             p_str = f"{istWert:.5f}".replace('.', ',')
             vd_str = f"{v_durch:.2f}".replace('.', ',')
             ve_str = f"{v_ein:.2f}".replace('.', ',')
-            if tangent_counter >= 100:
+            if tangent_counter >= 60:
                 dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',')  
             elif lokale_zeit > Endzeit - 1.5:
                 dur_str = "0"
             else:
                 dur_str = ""
-            
+
             raw_str = str(raw_array).replace('.', ',')
             resp_str = str(resp_array).replace('.', ',') if resp_array else ''
             response_str = str(response_array).replace('.', ',')  if response_array else ''
@@ -150,7 +146,7 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
                 pass
             
             old_pressure = istWert
-            print(f" V_Einlass: {v_ein:.2f} V | V_Durch: {v_durch:.2f} V | Druck: {istWert:.5f} mBar | Dauer der Stufe: {druckeinstelldauer:.3f} s | Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f}")
+            print(f" V_Einlass: {v_ein:.2f} V | V_Durch: {v_durch:.2f} V | Druck: {istWert:.5f} mBar | Dauer der Stufe: {druckeinstelldauer:.3f} s | Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f} | Runde: {current_step} von {total_steps} ")
             print()
 
             while time.time() - Startzeit - lokale_zeit < dt:
@@ -214,13 +210,15 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
            
+            total_steps = len(ventilspannungen2) * len(ventilspannungen1)
+            current_step = 0
             Startzeit = time.time()
-
-           
+            
             for v_durch in ventilspannungen2:
                 for  v_ein in ventilspannungen1:
+                    current_step += 1
                     Startzeit_neuer_Druck = time.time() - Startzeit
-                    Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, Startzeit_neuer_Druck, filename)
+                    Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, Startzeit_neuer_Druck, filename, current_step, total_steps)
             
             task.stop()
         #input("Enter drücken zum Beenden...")
