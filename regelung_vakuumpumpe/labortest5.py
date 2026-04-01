@@ -29,14 +29,10 @@ to = 1
 
 dt = 1
 old_pressure = 1000
-Druck = []
-Ableitung = []
-zeit = []
-Ventilspannung_Durchlass = []
-Ventilspannung_Einlass = []
-raw_array = []
-resp_array = []
-response_array = [] 
+
+raw_array =b""
+resp_array = ""
+response_array = ""
 
 Dauer = 1200.0
 
@@ -52,17 +48,17 @@ test_konfigurationen = [
 untere_hystere = False
 obere_hystere = False
 
-csv_buffer = []
+csv_buffer = [] 
 
 def getpressure(ser): #"Druckauslesebefehl"
     global raw_array, resp_array, response_array
     try:
         raw = ser.readline()
-        raw_array.append(raw)
+        raw_array = raw
         resp = raw.decode('utf-8') #liest die Werte vom CenterThree
-        resp_array.append(resp)
+        resp_array = resp
         response = resp.strip()
-        response_array.append(response)
+        response_array = response
 
         #response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
         if response:
@@ -80,7 +76,8 @@ def getpressure(ser): #"Druckauslesebefehl"
         return None
 
 def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename):
-        global old_pressure, Dauer, zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, csv_buffer
+        
+        global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array
         Endzeit = Startzeit_neuer_Druck + Dauer
         tangent_counter = 0
         
@@ -96,28 +93,39 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             time.sleep(0.01)
             pressure = getpressure(ser)
 
-        compare_pressure = sensorwahl_mit_hysterese(pressure) 
+        istWert = sensorwahl_mit_hysterese(pressure)
+        compare_pressure =  istWert
 
-        while(tangent_counter < 100) and (lokale_zeit < Endzeit) and istWert >= 0.0001 :
+        while(tangent_counter < 100) and (lokale_zeit < Endzeit) and (istWert >= 0.0001):
             pressure = getpressure(ser)
             if pressure is None:
+                while time.time() - Startzeit - lokale_zeit < dt:
+                    time.sleep(0.001)
+                    lokale_zeit = time.time() - Startzeit
                 continue
 
             istWert = sensorwahl_mit_hysterese(pressure) 
-
-            #Daten in die Listen speichern  
-            Ventilspannung_Durchlass.append(v_durch)
-            Ventilspannung_Einlass.append(v_ein)
-            Druck.append(istWert)
-            zeit.append(lokale_zeit)
             
             #Stabilitätscheck
-            schwankung = (istWert - old_pressure)/old_pressure
-            schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure 
-            
-            if abs(schwankung) < 0.01 and abs(schwankung_in_relation_zum_vergleich) < 0.04 and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
+            schwankung = (istWert - old_pressure)/old_pressure if old_pressure != 0 else 0
+            schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 0
+
+            if istWert < 1e-3:
+                fehler_grenze = 0.02
+            elif istWert < 5*1e-3:
+                fehler_grenze = 0.01
+            elif istWert < 1e-2:
+                fehler_grenze = 0.002
+            elif istWert < 5* 1e-2:
+                fehler_grenze = 0.001
+            else: 
+                fehler_grenze = 0.0005  
+
+            rel_fehler_grenze = 3 * fehler_grenze
+
+            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
-            elif (abs(schwankung) > 0.01 or abs(schwankung_in_relation_zum_vergleich) > 0.04) and tangent_counter >=0:
+            elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze) and tangent_counter >=0:
                 tangent_counter = 0
                 compare_pressure = istWert
             
@@ -127,10 +135,16 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             p_str = f"{istWert:.5f}".replace('.', ',')
             vd_str = f"{v_durch:.2f}".replace('.', ',')
             ve_str = f"{v_ein:.2f}".replace('.', ',')
-            dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',') if (tangent_counter >= 100 or lokale_zeit > Endzeit - 1.5) else ""
-            raw_str = f"{raw_array[-1].decode('utf-8').strip() if raw_array else ''}".replace('.', ',')
-            resp_str = f"{resp_array[-1].strip() if resp_array else ''}".replace('.', ',')
-            response_str = f"{response_array[-1] if response_array else ''}".replace('.', ',')
+            if tangent_counter >= 100:
+                dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',')  
+            elif lokale_zeit > Endzeit - 1.5:
+                dur_str = "0"
+            else:
+                dur_str = ""
+            
+            raw_str = str(raw_array).replace('.', ',')
+            resp_str = str(resp_array).replace('.', ',') if resp_array else ''
+            response_str = str(response_array).replace('.', ',')  if response_array else ''
 
             csv_buffer.append([t_str, p_str, vd_str, ve_str, wahl, dur_str, raw_str, resp_str, response_str])
 
@@ -209,10 +223,6 @@ def main():
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
             task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
             task.start()
-
-            #task.write([0, 7.25])
-            #time.sleep(5)
-            #task.write([0, 10])
            
             Startzeit = time.time()
 
@@ -239,47 +249,6 @@ def main():
         except Exception:
             pass
 
-    for i in range(len(Druck)-1):
-        tangente = (Druck[i+1] - Druck[i]) / (zeit[i+1] - zeit[i])
-        Ableitung.append(tangente)
-    
-    plt.figure(1,figsize=(10, 6))
-    plt.plot(zeit, Druck, color='red', linewidth=1.5)
-    plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Druckverlauf in mBar (lineare Y-Achse)")
-    plt.xlabel("Zeit [s]")
-    plt.ylabel("Druck [mbar]")
 
-    plt.figure(2, figsize=(10, 6))
-    plt.plot(zeit, Druck, color='red', linewidth=1.5)
-    plt.yscale('log')
-    plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Druckverlauf in mBar (logarithmische Y-Achse)")
-    plt.xlabel("Zeit [s]")
-    plt.ylabel("Druck [mbar]")
-
-    plt.figure(3, figsize=(10, 6))
-    plt.plot(zeit[:-1], Ableitung, color='red', linewidth=1.5)
-    plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Ableitung des Drucks mBar")
-    plt.xlabel("Zeit [s]")
-    plt.ylabel("Druckableitung [mbar/s]")
-    
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(10, 6))
-    ax1.plot(zeit, Ventilspannung_Durchlass, color='blue', linewidth=1.5, label='Durchlassventil')
-    ax1.set_title(f"Ventilspannung Durchlassventil")
-    ax1.set_xlabel("Zeit [s]")
-    ax1.set_ylabel("Spannung [V]")
-    ax1.grid(True, which="both", ls="-", alpha=0.5)
-
-    ax2.plot(zeit, Ventilspannung_Einlass, color='red', linewidth=1.5, label='Einlassventil')
-    ax2.set_title(f"Ventilspannung Einlassventil")
-    ax2.set_xlabel("Zeit [s]")
-    ax2.set_ylabel("Spannung [V]")
-    ax2.grid(True, which="both", ls="-", alpha=0.5)
-
-    plt.tight_layout()
-
-    plt.show()
 
 main()
