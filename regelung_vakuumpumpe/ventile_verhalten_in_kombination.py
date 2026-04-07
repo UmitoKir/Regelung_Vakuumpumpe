@@ -35,10 +35,11 @@ resp_array = ""
 response_array = ""
 
 Dauer = 1200.0
-
-ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
-
+#10, 9.5, 9, 8.5,
+#0, 0.5, 1, 1.5,
+ventilspannungen1 = [8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+ventilspannungen2 = [2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
+counter_limit = 60
 
 untere_hystere = False
 obere_hystere = False
@@ -50,7 +51,7 @@ def getpressure(ser): #"Druckauslesebefehl"
     try:
         raw = ser.readline()
         raw_array = raw
-        resp = raw.decode('utf-8') #liest die Werte vom CenterThree
+        resp = raw.decode('utf-8', errors='ignore') #liest die Werte vom CenterThree
         resp_array = resp
         response = resp.strip()
         response_array = response
@@ -64,35 +65,61 @@ def getpressure(ser): #"Druckauslesebefehl"
             return values
         else:
             print('keine Antwort. ')
+            ser.flushInput()
             return None
         return None
     except (ValueError, UnicodeDecodeError, IndexError) as e:
         print(f"Fehler bei der Druckauslesung: {e} | {response if 'response' in locals() else 'unbekannt'}" )
+        ser.flushInput() # Puffer leeren 
         return None
 
 def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename, current_step, total_steps):
         
-        global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array
+        global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array, counter_limit
         Endzeit = Startzeit_neuer_Druck + Dauer
         tangent_counter = 0
         
         task.write([v_durch, v_ein])
         
+        retry_count = 0 
         pressure = getpressure(ser)
-        while pressure is None:
-            time.sleep(0.01)
+        while pressure is None and retry_count < 20:
             pressure = getpressure(ser)
+            if pressure is None:
+                retry_count += 1
+                time.sleep(0.1)
+        
+        if pressure is None: 
+            print("Kritischer Fehler: Antwort vom Sensor auch nach 20 versuchen nicht sauber")
+            try: 
+                with open (filename, mode='a', newline='') as f:
+                    writer = csv.writer(f, delimiter=';')
+                    writer.writerow([f"{lokale_zeit:.3f}".replace('.', ','), "ERROR", 0, 0, "Sensor Timeout", "", "", ""])
+            except PermissionError :
+                print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
+                pass
+            return
 
         istWert = sensorwahl_mit_hysterese(pressure)
         compare_pressure =  istWert
 
-        while(tangent_counter < 60) and (lokale_zeit < Endzeit) and (istWert >= 0.0005):
+        while(tangent_counter < counter_limit) and (lokale_zeit < Endzeit) and (istWert >= 0.0005):
+            retry_count = 0 
             pressure = getpressure(ser)
-            if pressure is None:
-                while time.time() - Startzeit - lokale_zeit < dt:
-                    time.sleep(0.001)
-                    lokale_zeit = time.time() - Startzeit
-                continue
+            while pressure is None and retry_count < 20:
+                retry_count += 1
+                time.sleep(0.1)
+                pressure = getpressure(ser)
+        
+            if pressure is None: 
+                print("Kritischer Fehler: Antwort vom Sensor auch nach 20 versuchen nicht sauber")
+                try: 
+                    with open (filename, mode='a', newline='') as f:
+                        writer = csv.writer(f, delimiter=';')
+                        writer.writerow([f"{lokale_zeit:.3f}".replace('.', ','), "ERROR", 0, 0, "Sensor Timeout", "", "", ""])
+                except PermissionError :
+                    print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
+                return
 
             istWert = sensorwahl_mit_hysterese(pressure) 
             
@@ -110,7 +137,7 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
 
             rel_fehler_grenze = 3 * fehler_grenze
 
-            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <60:  # Nur wenn die Ableitung signifikant ist
+            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <counter_limit:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
             elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze) and tangent_counter >=0:
                 tangent_counter = 0
@@ -122,7 +149,7 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
             p_str = f"{istWert:.5f}".replace('.', ',')
             vd_str = f"{v_durch:.2f}".replace('.', ',')
             ve_str = f"{v_ein:.2f}".replace('.', ',')
-            if tangent_counter >= 60:
+            if tangent_counter >= counter_limit:
                 dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',')  
             elif lokale_zeit > Endzeit - 1.5:
                 dur_str = "0"
@@ -219,7 +246,13 @@ def main():
                     current_step += 1
                     Startzeit_neuer_Druck = time.time() - Startzeit
                     Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, Startzeit_neuer_Druck, filename, current_step, total_steps)
-            
+                task.write([5.0, 0.0])  # umgebungsdruck wiederherstellen
+                time.sleep(20)  
+                task.write([7.0, 0.0])  # umgebungsdruck wiederherstellen
+                time.sleep(10) 
+                task.write([10.0, 0.0])  # umgebungsdruck wiederherstellen
+                time.sleep(5) 
+
             task.stop()
         #input("Enter drücken zum Beenden...")
     except KeyboardInterrupt:
