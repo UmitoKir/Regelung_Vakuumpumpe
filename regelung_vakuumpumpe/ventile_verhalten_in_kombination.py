@@ -35,10 +35,10 @@ resp_array = ""
 response_array = ""
 
 Dauer = 1200.0
-#10, 9.5, 9, 8.5,
-#0, 0.5, 1, 1.5,
-ventilspannungen1 = [8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-ventilspannungen2 = [2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
+#10, 9.5, 9, 8.5, 8, 
+#0, 0.5, 1, 1.5, 2, 
+ventilspannungen1 = [7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+ventilspannungen2 = [2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 counter_limit = 60
 
 untere_hystere = False
@@ -246,11 +246,11 @@ def main():
                     current_step += 1
                     Startzeit_neuer_Druck = time.time() - Startzeit
                     Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, Startzeit_neuer_Druck, filename, current_step, total_steps)
-                task.write([5.0, 0.0])  # umgebungsdruck wiederherstellen
+                task.write([0.0, 5.0])  # umgebungsdruck wiederherstellen
                 time.sleep(20)  
-                task.write([7.0, 0.0])  # umgebungsdruck wiederherstellen
+                task.write([0.0, 7.0])  # umgebungsdruck wiederherstellen
                 time.sleep(10) 
-                task.write([10.0, 0.0])  # umgebungsdruck wiederherstellen
+                task.write([0.0, 10.0])  # umgebungsdruck wiederherstellen
                 time.sleep(5) 
 
             task.stop()

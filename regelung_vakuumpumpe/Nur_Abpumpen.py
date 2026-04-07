@@ -42,7 +42,7 @@ def main():
             print("ao0: 10 , ao1: 0")
             #task.write([10, 0]) # mit ctrl+C programm abbrechen diese zeile und nächste auskommetieren und dann programm neu starten.
             #time.sleep(5000)  # diesen auch auskommentieren
-            #print("ao0: 0 , ao1: 1.5")
+            print("ao0: 0 , ao1: 1.5")
             task.write([0, 2])
             time.sleep(5)
             print("ao0: 0 , ao1: 3")
