@@ -34,12 +34,12 @@ raw_array =b""
 resp_array = ""
 response_array = ""
 
-Dauer = 1200.0
+Dauer = 2700.0
 #10, 9.5, 9, 8.5, 8, 
 #0, 0.5, 1, 1.5, 2, 
-ventilspannungen1 = [7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-ventilspannungen2 = [2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
-counter_limit = 60
+ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
+counter_limit = 200
 
 untere_hystere = False
 obere_hystere = False
@@ -128,14 +128,22 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
             schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 0
 
             
-            if istWert < 1e-3:
+            if istWert < 7.5 * 1e-4:
                 fehler_grenze = 0.02
-            elif istWert < 5*1e-3:
+            elif istWert < 1e-3:
+                fehler_grenze = 0.0134
+            elif istWert < 2.5*1e-3:
                 fehler_grenze = 0.01
-            else: 
+            elif istWert < 5*1e-3:
+                fehler_grenze = 0.004
+            elif istWert < 7.5*1e-3:
                 fehler_grenze = 0.002
+            elif istWert < 1e-2:
+                fehler_grenze = 0.0015
+            else: 
+                fehler_grenze = 0.001
 
-            rel_fehler_grenze = 3 * fehler_grenze
+            rel_fehler_grenze = 2 * fehler_grenze
 
             if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <counter_limit:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
@@ -218,7 +226,7 @@ def sensorwahl_mit_hysterese(pressure):
 
 def main():
     global ventilspannungen1, ventilspannungen2
-    filename = f"messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
+    filename = f"3D_messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
     with open(filename, mode='w', newline='') as f:
         writer = csv.writer(f, delimiter=';')
         writer.writerow(['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Dauer bis Druckstabilitaet_s', 'raw', 'resp', 'response'])
@@ -249,9 +257,9 @@ def main():
                 task.write([0.0, 5.0])  # umgebungsdruck wiederherstellen
                 time.sleep(20)  
                 task.write([0.0, 7.0])  # umgebungsdruck wiederherstellen
-                time.sleep(10) 
+                time.sleep(20) 
                 task.write([0.0, 10.0])  # umgebungsdruck wiederherstellen
-                time.sleep(5) 
+                time.sleep(10) 
 
             task.stop()
         #input("Enter drücken zum Beenden...")

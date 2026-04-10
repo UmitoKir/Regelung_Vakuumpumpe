@@ -34,7 +34,9 @@ raw_array =b""
 resp_array = ""
 response_array = ""
 
-Dauer = 1200.0
+Dauer = 2700.0
+counter_limit = 300
+
 
 ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
 ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
@@ -55,7 +57,7 @@ def getpressure(ser): #"Druckauslesebefehl"
     try:
         raw = ser.readline()
         raw_array = raw
-        resp = raw.decode('utf-8') #liest die Werte vom CenterThree
+        resp = raw.decode('utf-8', errors='ignore') #liest die Werte vom CenterThree
         resp_array = resp
         response = resp.strip()
         response_array = response
@@ -69,15 +71,17 @@ def getpressure(ser): #"Druckauslesebefehl"
             return values
         else:
             print('keine Antwort. ')
+            ser.flushInput()
             return None
         return None
     except (ValueError, UnicodeDecodeError, IndexError) as e:
         print(f"Fehler bei der Druckauslesung: {e} | {response if 'response' in locals() else 'unbekannt'}" )
+        ser.flushInput() # Puffer leeren 
         return None
 
 def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename):
         
-        global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array
+        global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array, counter_limit
         Endzeit = Startzeit_neuer_Druck + Dauer
         tangent_counter = 0
         
@@ -88,21 +92,45 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             task.write([ventilspannung, 0])
             v_durch, v_ein = ventilspannung, 0
         
+        retry_count = 0 
         pressure = getpressure(ser)
-        while pressure is None:
-            time.sleep(0.01)
+        while pressure is None and retry_count < 20:
             pressure = getpressure(ser)
+            if pressure is None:
+                retry_count += 1
+                time.sleep(0.1)
+        
+        if pressure is None: 
+            print("Kritischer Fehler: Antwort vom Sensor auch nach 20 versuchen nicht sauber")
+            try: 
+                with open (filename, mode='a', newline='') as f:
+                    writer = csv.writer(f, delimiter=';')
+                    writer.writerow([f"{lokale_zeit:.3f}".replace('.', ','), "ERROR", 0, 0, "Sensor Timeout", "", "", ""])
+            except PermissionError :
+                print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
+                pass
+            return
 
         istWert = sensorwahl_mit_hysterese(pressure)
         compare_pressure =  istWert
 
-        while(tangent_counter < 100) and (lokale_zeit < Endzeit) and (istWert >= 0.0001):
+        while(tangent_counter < counter_limit) and (lokale_zeit < Endzeit) and (istWert >= 0.0001):
+            retry_count = 0 
             pressure = getpressure(ser)
-            if pressure is None:
-                while time.time() - Startzeit - lokale_zeit < dt:
-                    time.sleep(0.001)
-                    lokale_zeit = time.time() - Startzeit
-                continue
+            while pressure is None and retry_count < 20:
+                retry_count += 1
+                time.sleep(0.1)
+                pressure = getpressure(ser)
+        
+            if pressure is None: 
+                print("Kritischer Fehler: Antwort vom Sensor auch nach 20 versuchen nicht sauber")
+                try: 
+                    with open (filename, mode='a', newline='') as f:
+                        writer = csv.writer(f, delimiter=';')
+                        writer.writerow([f"{lokale_zeit:.3f}".replace('.', ','), "ERROR", 0, 0, "Sensor Timeout", "", "", ""])
+                except PermissionError :
+                    print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
+                return
 
             istWert = sensorwahl_mit_hysterese(pressure) 
             
@@ -110,18 +138,26 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             schwankung = (istWert - old_pressure)/old_pressure if old_pressure != 0 else 0
             schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 0
 
-            if istWert < 1e-3:
+            if istWert < 7.5 * 1e-4:
                 fehler_grenze = 0.02
-            elif istWert < 5*1e-3:
+            elif istWert < 1e-3:
+                fehler_grenze = 0.0134
+            elif istWert < 2.5*1e-3:
                 fehler_grenze = 0.01
+            elif istWert < 5*1e-3:
+                fehler_grenze = 0.004
+            elif istWert < 7.5*1e-3:
+                fehler_grenze = 0.002
+            elif istWert < 1e-2:
+                fehler_grenze = 0.0015
             else: 
-                fehler_grenze = 0.002  
+                fehler_grenze = 0.001 
 
             rel_fehler_grenze = 3 * fehler_grenze
 
-            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <100:  # Nur wenn die Ableitung signifikant ist
+            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <counter_limit:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1
-            elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze) and tangent_counter >=0:
+            elif ((abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze)) and tangent_counter >=0:
                 tangent_counter = 0
                 compare_pressure = istWert
             
@@ -131,7 +167,7 @@ def Druck_abfahren(ser,task, dt, wahl, ventilspannung, Startzeit, Startzeit_neue
             p_str = f"{istWert:.5f}".replace('.', ',')
             vd_str = f"{v_durch:.2f}".replace('.', ',')
             ve_str = f"{v_ein:.2f}".replace('.', ',')
-            if tangent_counter >= 100:
+            if tangent_counter >= counter_limit:
                 dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',')  
             elif lokale_zeit > Endzeit - 1.5:
                 dur_str = "0"
