@@ -34,11 +34,17 @@ raw_array =b""
 resp_array = ""
 response_array = ""
 
-Dauer = 2700.0
+Dauer = 2400.0
 #10, 9.5, 9, 8.5, 8, 
 #0, 0.5, 1, 1.5, 2, 
-ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
+ventilspannungen1 = [10.0, 9.5, 9, 8.5, 8, 7.549, 7.381, 7.291, 7.234, 7.164, 7.034, 6.618, 6.130, 6.074, 
+                     6.013, 5.951, 5.891, 5.825, 5.746, 5.648, 5.522, 5.358, 5.331, 5.301, 5.266, 5.226, 
+                     5.181, 5.129, 5.072, 5.008, 4.928, 4.909, 4.886, 4.858, 4.824, 4.784, 4.738, 4.684, 
+                     4.622, 4.552, 4.545, 4.537, 4.530, 4.522, 4.514, 4.506, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
+ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.483, 3.738, 3.882, 4.022, 4.161, 4.294, 4.462, 4.664,
+                     4.692, 4.723, 4.758, 4.799, 4.845, 4.897, 4.956, 5.018, 5.113, 5.134, 5.159, 5.187,
+                     5.219, 5.255, 5.295, 5.341, 5.392, 5.448, 5.454, 5.460, 5.466, 5.472, 5.478, 5.484,
+                     5.491, 5.497, 5.657, 5.720, 5.795, 5.882, 5.980, 6.181, 6.597, 7, 7.5, 8, 8.5, 9, 9.5, 10]
 counter_limit = 200
 
 untere_hystere = False
@@ -140,10 +146,14 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
                 fehler_grenze = 0.002
             elif istWert < 1e-2:
                 fehler_grenze = 0.0015
-            else: 
+            elif istWert < 2.5*1e-2:
                 fehler_grenze = 0.001
+            elif istWert < 5*1e-2:
+                fehler_grenze = 0.0004
+            else: 
+                fehler_grenze = 0.0002
 
-            rel_fehler_grenze = 2 * fehler_grenze
+            rel_fehler_grenze = 10 * fehler_grenze
 
             if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <counter_limit:  # Nur wenn die Ableitung signifikant ist
                 tangent_counter += 1

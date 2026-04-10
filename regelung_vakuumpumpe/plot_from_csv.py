@@ -54,7 +54,7 @@ def get_arrays_from_csv(dateipfad):
 def logistische_funktion(x, L, k, x0):
     return L / (1 + np.exp(-k * (x - x0)))
 
-def interpolation(ventilspannungen, druck):
+def interpolation(ventilspannungen, druck, name="Ventil"):
     #interpolation
     x_interp, y_interp, y_interp2, y_interp_pchip = None, None, None, None
 
@@ -90,11 +90,11 @@ def interpolation(ventilspannungen, druck):
             Druckwerte_valid = [p for p in Druckwerte if min(p_inv_final) <= p <= max(p_inv_final)]
             Ventilspannungen_interp = x_interp_pchip(Druckwerte_valid)
 
-            print("\n--- Interpolierte Sollwerte (PCHIP Invers) ---")
+            print(f"\n--- Interpolierte Sollwerte (PCHIP Invers) für {name} ---")
             print("Druck [mBar]  ->  Benötigte Spannung [V]")
             for p, v in zip(Druckwerte, Ventilspannungen_interp):
                 print(f"{p:12.4f}  ->  {v:6.3f} V")
-            
+                
         if len(v_unique) > 2:
             # 'quadratic' entspricht dem 2. Grad
             f_quad = interp1d(v_unique, p_unique, kind='quadratic', fill_value="extrapolate")
@@ -147,53 +147,15 @@ def main():
                 druck_durchlass_fallend.append(stab_druck[i])
 
     #interpolation
-    x_interp_f_ein, y_interp_f_ein, y_interp2_f_ein, y_interp_pchip_f_ein = None, None, None, None
-    x_interp_s_ein, y_interp_s_ein, y_interp2_s_ein, y_interp_pchip_s_ein = None, None, None, None
-    x_interp_f_durch, y_interp_f_durch, y_interp2_f_durch, y_interp_pchip_f_durch = None, None, None, None
-    x_interp_s_durch, y_interp_s_durch, y_interp2_s_durch, y_interp_pchip_s_durch = None, None, None, None
+    x_interp_f_ein, y_interp_cubic_f_ein, y_interp2_f_ein, y_interp_pchip_f_ein = None, None, None, None
+    x_interp_s_ein, y_interp_cubic_s_ein, y_interp2_s_ein, y_interp_pchip_s_ein = None, None, None, None
+    x_interp_f_durch, y_interp_cubic_f_durch, y_interp2_f_durch, y_interp_pchip_f_durch = None, None, None, None
+    x_interp_s_durch, y_interp_cubic_s_durch, y_interp2_s_durch, y_interp_pchip_s_durch = None, None, None, None
 
-
-    if len(v_einlass_fallend) > 1:
-        v_data = np.array(v_einlass_fallend)
-        p_data = np.array(druck_einlass_fallend)
-        idx = np.argsort(v_data)
-        v_sorted = v_data[idx]
-        p_sorted = p_data[idx]
-        v_unique, unique_idx = np.unique(v_sorted, return_index=True)
-        p_unique = p_sorted[unique_idx]
-        
-        if len(v_unique) > 1:
-            cs = CubicSpline(v_unique, p_unique, bc_type='clamped')
-            x_interp_f_ein = np.linspace(min(v_unique), max(v_unique), 500)
-            y_interp_f_ein = cs(x_interp_f_ein)
-
-            pchip = PchipInterpolator(v_unique, p_unique)
-            y_interp_pchip_f_ein = pchip(x_interp_f_ein)
-
-        idx_inv = np.argsort(p_unique)
-        p_inv_sorted = p_unique[idx_inv]
-        v_inv_sorted = v_unique[idx_inv]
-        p_inv_final, inv_unique_idx = np.unique(p_inv_sorted, return_index=True)
-        v_inv_final = v_inv_sorted[inv_unique_idx]
-        if len(p_inv_final) > 1:
-
-            x_interp_pchip_f_ein = PchipInterpolator(p_inv_final, v_inv_final)
-
-            Druckwerte = [900, 800, 700, 600, 500, 400, 300, 200, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
-            #nur Werte abfragen die auch gemessen werden konnten
-            Druckwerte_valid = [p for p in Druckwerte if min(p_inv_final) <= p <= max(p_inv_final)]
-            Ventilspannungen_interp = x_interp_pchip_f_ein(Druckwerte_valid)
-
-            print("\n--- Interpolierte Sollwerte (PCHIP Invers) ---")
-            print("Druck [mBar]  ->  Benötigte Spannung [V]")
-            for p, v in zip(Druckwerte, Ventilspannungen_interp):
-                print(f"{p:12.4f}  ->  {v:6.3f} V")
-            
-        if len(v_unique) > 2:
-            # 'quadratic' entspricht dem 2. Grad
-            f_quad = interp1d(v_unique, p_unique, kind='quadratic', fill_value="extrapolate")
-            y_interp2_f_ein = f_quad(x_interp_f_ein)
-     
+    x_interp_f_ein, y_interp_cubic_f_ein, y_interp2_f_ein, y_interp_pchip_f_ein = interpolation(v_einlass_fallend, druck_einlass_fallend, name="Einlassventil fallend")
+    x_interp_s_ein, y_interp_cubic_s_ein, y_interp2_s_ein, y_interp_pchip_s_ein = interpolation(v_einlass_steigend, druck_einlass_steigend, name="Einlassventil steigend")
+    x_interp_f_durch, y_interp_cubic_f_durch, y_interp2_f_durch, y_interp_pchip_f_durch = interpolation(v_durchlass_fallend, druck_durchlass_fallend, name="Durchlassventil fallend")
+    x_interp_s_durch, y_interp_cubic_s_durch, y_interp2_s_durch, y_interp_pchip_s_durch = interpolation(v_durchlass_steigend, druck_durchlass_steigend, name="Durchlassventil steigend")
 
 
     plt.figure(1,figsize=(10, 6))
@@ -234,55 +196,67 @@ def main():
     ax2.grid(True, which="both", ls="-", alpha=0.5)
 
     plt.figure(5,figsize=(10, 6))
-    plt.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='blue', linewidth=1.5, label='Messpunkte fallend')
-    plt.plot(v_einlass_steigend, druck_einlass_steigend, 'o-', color='green', linewidth=1.5, label='Messpunkte steigend')
-    plt.plot(x_interp_f, y_interp_f, color='red', linewidth=1.5, label='Kubische Spline-Interpolation')
-    plt.plot(x_interp_f, y_interp2_f, color='pink', linewidth=1.5, label='quadratische-Interpolation')
-    plt.plot(x_interp_f, y_interp_pchip_f, color='orange', linewidth=1.5, label='PCHIP-Interpolation')
+    plt.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
+    plt.plot(v_einlass_steigend, druck_einlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
+    plt.plot(x_interp_f_ein, y_interp_cubic_f_ein, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    plt.plot(x_interp_f_ein, y_interp2_f_ein, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    plt.plot(x_interp_f_ein, y_interp_pchip_f_ein, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
+    plt.plot(x_interp_s_ein, y_interp_cubic_s_ein, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    plt.plot(x_interp_s_ein, y_interp2_s_ein, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    plt.plot(x_interp_s_ein, y_interp_pchip_s_ein, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Eingeschwungener Druck in mBar (lin)")
+    plt.title(f"Eingeschwungener Druck in mBar (lin) Einlassventil")
     plt.xlabel("Einlassventilspannung [V]")
     plt.ylabel("Druck [mbar]")
     plt.legend()
 
     plt.figure(6,figsize=(10, 6))
-    plt.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='blue', linewidth=1.5, label='Messpunkte fallend')
-    plt.plot(v_einlass_steigend, druck_einlass_steigend, 'o-', color='green', linewidth=1.5, label='Messpunkte steigend')
-    plt.plot(x_interp_f, y_interp_f, color='red', linewidth=1.5, label='Kubische Spline-Interpolation')
-    plt.plot(x_interp_f, y_interp2_f, color='pink', linewidth=1.5, label='quadratische-Interpolation')
-    plt.plot(x_interp_f, y_interp_pchip_f, color='orange', linewidth=1.5, label='PCHIP-Interpolation')
+    plt.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
+    plt.plot(v_einlass_steigend, druck_einlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
+    plt.plot(x_interp_f_ein, y_interp_cubic_f_ein, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    plt.plot(x_interp_f_ein, y_interp2_f_ein, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    plt.plot(x_interp_f_ein, y_interp_pchip_f_ein, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
+    plt.plot(x_interp_s_ein, y_interp_cubic_s_ein, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    plt.plot(x_interp_s_ein, y_interp2_s_ein, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    plt.plot(x_interp_s_ein, y_interp_pchip_s_ein, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.yscale('log')
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Eingeschwungener Druck in mBar (log)")
+    plt.title(f"Eingeschwungener Druck in mBar (log) Einlassventil")
     plt.xlabel("Einlassventilspannung [V]")
     plt.ylabel("Druck [mbar]")
     plt.legend()
 
     plt.figure(7,figsize=(10, 6))
-    plt.plot(v_durchlass_fallend, druck_durchlass_fallend, 'o-', color='blue', linewidth=1.5, label='Messpunkte fallend')
-    plt.plot(v_durchlass_steigend, druck_durchlass_steigend, 'o-', color='green', linewidth=1.5, label='Messpunkte steigend')
-    #plt.plot(x_interp_f, y_interp_f, color='red', linewidth=1.5, label='Kubische Spline-Interpolation')
-    #plt.plot(x_interp_f, y_interp2_f, color='pink', linewidth=1.5, label='quadratische-Interpolation')
-    #plt.plot(x_interp_f, y_interp_pchip_f, color='orange', linewidth=1.5, label='PCHIP-Interpolation')
+    plt.plot(v_durchlass_fallend, druck_durchlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
+    plt.plot(v_durchlass_steigend, druck_durchlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
+    plt.plot(x_interp_f_durch, y_interp_cubic_f_durch, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    plt.plot(x_interp_f_durch, y_interp2_f_durch, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    plt.plot(x_interp_f_durch, y_interp_pchip_f_durch, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
+    plt.plot(x_interp_s_durch, y_interp_cubic_s_durch, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    plt.plot(x_interp_s_durch, y_interp2_s_durch, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    plt.plot(x_interp_s_durch, y_interp_pchip_s_durch, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Eingeschwungener Druck in mBar (lin)")
+    plt.title(f"Eingeschwungener Druck in mBar (lin) Durchlassventil")
     plt.xlabel("Durchlassventilspannung [V]")
     plt.ylabel("Druck [mbar]")
     plt.legend()
 
     plt.figure(8,figsize=(10, 6))
-    plt.plot(v_durchlass_fallend, druck_durchlass_fallend, 'o-', color='blue', linewidth=1.5, label='Messpunkte fallend')
-    plt.plot(v_durchlass_steigend, druck_durchlass_steigend, 'o-', color='green', linewidth=1.5, label='Messpunkte steigend')
-    #plt.plot(x_interp_f, y_interp_f, color='red', linewidth=1.5, label='Kubische Spline-Interpolation')
-    #plt.plot(x_interp_f, y_interp2_f, color='pink', linewidth=1.5, label='quadratische-Interpolation')
-    #plt.plot(x_interp_f, y_interp_pchip_f, color='orange', linewidth=1.5, label='PCHIP-Interpolation')
+    plt.plot(v_durchlass_fallend, druck_durchlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
+    plt.plot(v_durchlass_steigend, druck_durchlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
+    plt.plot(x_interp_f_durch, y_interp_cubic_f_durch, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    plt.plot(x_interp_f_durch, y_interp2_f_durch, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    plt.plot(x_interp_f_durch, y_interp_pchip_f_durch, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
+    plt.plot(x_interp_s_durch, y_interp_cubic_s_durch, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    plt.plot(x_interp_s_durch, y_interp2_s_durch, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    plt.plot(x_interp_s_durch, y_interp_pchip_s_durch, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.yscale('log')
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Eingeschwungener Druck in mBar (log)")
+    plt.title(f"Eingeschwungener Druck in mBar (log) Durchlassventil")
     plt.xlabel("Durchlassventilspannung [V]")
     plt.ylabel("Druck [mbar]")
     plt.legend()
