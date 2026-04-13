@@ -30,11 +30,6 @@ druck_durchlass_steigend = []
 druck_durchlass_fallend = []
 
 
-untere_hystere = False
-obere_hystere = False
-
-csv_buffer = []
-
 def get_arrays_from_csv(dateipfad):
     global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, modus, StufenDauer
     try:
@@ -198,11 +193,11 @@ def main():
     plt.figure(5,figsize=(10, 6))
     plt.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
     plt.plot(v_einlass_steigend, druck_einlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
-    plt.plot(x_interp_f_ein, y_interp_cubic_f_ein, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
-    plt.plot(x_interp_f_ein, y_interp2_f_ein, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    #plt.plot(x_interp_f_ein, y_interp_cubic_f_ein, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    #plt.plot(x_interp_f_ein, y_interp2_f_ein, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
     plt.plot(x_interp_f_ein, y_interp_pchip_f_ein, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
-    plt.plot(x_interp_s_ein, y_interp_cubic_s_ein, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
-    plt.plot(x_interp_s_ein, y_interp2_s_ein, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    #plt.plot(x_interp_s_ein, y_interp_cubic_s_ein, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    #plt.plot(x_interp_s_ein, y_interp2_s_ein, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
     plt.plot(x_interp_s_ein, y_interp_pchip_s_ein, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.grid(True, which="both", ls="-", alpha=0.5)
@@ -214,11 +209,11 @@ def main():
     plt.figure(6,figsize=(10, 6))
     plt.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
     plt.plot(v_einlass_steigend, druck_einlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
-    plt.plot(x_interp_f_ein, y_interp_cubic_f_ein, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
-    plt.plot(x_interp_f_ein, y_interp2_f_ein, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    #plt.plot(x_interp_f_ein, y_interp_cubic_f_ein, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    #plt.plot(x_interp_f_ein, y_interp2_f_ein, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
     plt.plot(x_interp_f_ein, y_interp_pchip_f_ein, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
-    plt.plot(x_interp_s_ein, y_interp_cubic_s_ein, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
-    plt.plot(x_interp_s_ein, y_interp2_s_ein, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    #plt.plot(x_interp_s_ein, y_interp_cubic_s_ein, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    #plt.plot(x_interp_s_ein, y_interp2_s_ein, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
     plt.plot(x_interp_s_ein, y_interp_pchip_s_ein, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.yscale('log')
@@ -231,11 +226,11 @@ def main():
     plt.figure(7,figsize=(10, 6))
     plt.plot(v_durchlass_fallend, druck_durchlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
     plt.plot(v_durchlass_steigend, druck_durchlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
-    plt.plot(x_interp_f_durch, y_interp_cubic_f_durch, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
-    plt.plot(x_interp_f_durch, y_interp2_f_durch, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    #plt.plot(x_interp_f_durch, y_interp_cubic_f_durch, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    #plt.plot(x_interp_f_durch, y_interp2_f_durch, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
     plt.plot(x_interp_f_durch, y_interp_pchip_f_durch, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
-    plt.plot(x_interp_s_durch, y_interp_cubic_s_durch, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
-    plt.plot(x_interp_s_durch, y_interp2_s_durch, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    #plt.plot(x_interp_s_durch, y_interp_cubic_s_durch, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    #plt.plot(x_interp_s_durch, y_interp2_s_durch, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
     plt.plot(x_interp_s_durch, y_interp_pchip_s_durch, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.grid(True, which="both", ls="-", alpha=0.5)
@@ -247,11 +242,11 @@ def main():
     plt.figure(8,figsize=(10, 6))
     plt.plot(v_durchlass_fallend, druck_durchlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
     plt.plot(v_durchlass_steigend, druck_durchlass_steigend, 'o-', color='grey', linewidth=1.5, label='Messpunkte steigend')
-    plt.plot(x_interp_f_durch, y_interp_cubic_f_durch, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
-    plt.plot(x_interp_f_durch, y_interp2_f_durch, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
+    #plt.plot(x_interp_f_durch, y_interp_cubic_f_durch, color='red', linewidth=1.5, label='Kubische Spline-Interpolation fallend')
+    #plt.plot(x_interp_f_durch, y_interp2_f_durch, color='yellow', linewidth=1.5, label='quadratische-Interpolation fallend')
     plt.plot(x_interp_f_durch, y_interp_pchip_f_durch, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
-    plt.plot(x_interp_s_durch, y_interp_cubic_s_durch, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
-    plt.plot(x_interp_s_durch, y_interp2_s_durch, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
+    #plt.plot(x_interp_s_durch, y_interp_cubic_s_durch, color='pink', linewidth=1.5, label='Kubische Spline-Interpolation steigend')
+    #plt.plot(x_interp_s_durch, y_interp2_s_durch, color='orange', linewidth=1.5, label='quadratische-Interpolation steigend')
     plt.plot(x_interp_s_durch, y_interp_pchip_s_durch, color='violet', linewidth=1.5, label='PCHIP-Interpolation steigend')
     plt.gca().invert_xaxis()
     plt.yscale('log')
