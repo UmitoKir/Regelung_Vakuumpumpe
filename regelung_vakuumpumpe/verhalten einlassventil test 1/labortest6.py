@@ -29,8 +29,8 @@ if sp is None:
 br = 38400
 to = 1
 
-kp=0.2 #0.1152
-ki=0.1 #0.2 standartmäßig
+kp=0.001 #0.1152
+ki= 0.0005 #0.0002 #0.2 standartmäßig
 dt = 1
 old_pressure = 1000
 
@@ -102,15 +102,15 @@ def sensorwahl_mit_hysterese(pressure):
     global untere_hystere, obere_hystere, old_pressure, history_hp
     
     istWert = old_pressure
-    hp_smooth = old_pressure
-    if pressure[0] > 0.1:
-        history_hp.append(pressure[0])
-        if len(history_hp) > 5:
-            history_hp.pop(0)
-        hp_smooth = sum(history_hp) / len(history_hp)
+    # hp_smooth = old_pressure
+    # if pressure[0] > 0.1:
+    #     history_hp.append(pressure[0])
+    #     if len(history_hp) > 5:
+    #         history_hp.pop(0)
+    #     hp_smooth = sum(history_hp) / len(history_hp)
 
     if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
-        istWert = round(hp_smooth, 2)
+        istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
         untere_hystere = False
         #print("Sensor HP")
     elif pressure[1]< 0.5: #ab <0.5mBar immer sensor 2 verwenden
@@ -125,11 +125,11 @@ def sensorwahl_mit_hysterese(pressure):
         istWert = pressure[1]
         #print("Sensor LP")
     elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
-        istWert = round(hp_smooth, 2)
+        istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
         obere_hystere = True
         #print("Sensor HP")
     elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
-        istWert = round(hp_smooth, 2)
+        istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
         #print("Sensor HP")
     if istWert <=0:
         istWert = 1e-4
@@ -230,14 +230,15 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
         if V_ein_fallend is None or V_durch_fallend is None:
             print("Fehler: Interpolation fehlgeschlagen, LUT leer?")
             return
-        V_ein = V_ein_fallend(Solldruck * 0.95)
-        #V_ein = V_ein_steigend(Solldruck * 0.95)
+        V_ein = V_ein_fallend(Solldruck * 0.97)
+        V_ein_genau = V_ein_fallend(Solldruck)
+        #V_ein = V_ein_steigend(Solldruck * 0.97)
         V_durch = V_durch_fallend(Solldruck)
         print(f"Anfangs Stellgröße: {V_ein:.2f} V")
         task.write([10.0, V_ein])
         
         relativer_fehler = abs(Solldruck - istWert) / Solldruck
-        while (relativer_fehler >=0.05 and lokale_zeit < Max_dauer):
+        while (relativer_fehler >=0.075 and lokale_zeit < Max_dauer):
             print(f"relativer Fehler:{relativer_fehler: .3} | Solldruck:{Solldruck:.2} | Istdruck: {istWert:.2} | V_Einlass: {V_ein:.2f} V")
             pressure = getpressure(ser)
             result = pressure_error_handler(ser, pressure, filename, Startzeit)
@@ -278,15 +279,7 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
         #weil ansonsonsten kann es den solldruck nicht halten. 
         Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
         compare_pressure = istWert
-        while ((tangent_counter < counter_limit and lokale_zeit < Max_dauer) or lokale_zeit < Endzeit) and istWert >= 0.001: #relativer Fehler kleiner 1%
-            print(f"relativer Fehler:{rel_fehler: .3} | Solldruck:{Solldruck:.2} | Istdruck: {istWert:.2} | V_Einlass: {V_ein:.2f} V | I-Anteil: {I_Anteil:.4f}")
-            v_durch = (1+rel_fehler) * V_durch
-            v_ein = V_ein + Stellgröße
-            if v_ein < 0: v_ein = 0
-            if v_ein > 10: v_ein = 10
-
-            task.write([v_durch, v_ein])
-            
+        while ((tangent_counter < counter_limit and lokale_zeit < Max_dauer) or lokale_zeit < Endzeit) and istWert >= 0.001: #relativer Fehler kleiner 1%            
             pressure = getpressure(ser)
             result = pressure_error_handler(ser, pressure, filename, Startzeit)
             if result == False:
@@ -296,6 +289,11 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
             old_pressure = istWert
             istWert = sensorwahl_mit_hysterese(pressure)
             Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
+            
+            v_ein = np.clip(V_ein_genau + (Stellgröße), 0, 10)
+            v_durch = np.clip((1 + rel_fehler) * V_durch, 0, 10)
+
+            task.write([v_durch, v_ein])
 
             #Stabilitätscheck
             schwankung = (istWert - old_pressure)/old_pressure
@@ -304,21 +302,20 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
             fehler_grenze = max_fehler_bestimmung(istWert)
             rel_fehler_grenze = 5 * fehler_grenze
 
-            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter < counter_limit:  # Nur wenn die Ableitung signifikant ist
+            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze:  # Nur wenn die Ableitung signifikant ist
+                if (tangent_counter == counter_limit) or lokale_zeit > Max_dauer - 1.5:
+                    Stab_Startzeit = lokale_zeit
+                    Endzeit = Stab_Startzeit + Dauer
+                    dur_str = f"{(lokale_zeit):.3f}".replace('.', ',')
+                elif tangent_counter > counter_limit and lokale_zeit > Endzeit -1.5:
+                    dur_str = "300,0"
+                else:
+                    dur_str = ""
                 tangent_counter += 1
-                dur_str = ""
             elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze):
                 tangent_counter = 0
                 compare_pressure = istWert
                 dur_str = ""
-            elif (tangent_counter == counter_limit) or lokale_zeit > Endzeit - 1.5:
-                Stab_Startzeit = lokale_zeit
-                Endzeit = Stab_Startzeit + Dauer
-                dur_str = f"{(lokale_zeit):.3f}".replace('.', ',')
-                tangent_counter += 1
-            elif tangent_counter > counter_limit or lokale_zeit > Endzeit - 1.5:
-                dur_str = ""
-                tangent_counter += 1
             
             t_str = f"{lokale_zeit:.3f}".replace('.', ',')
             p_str = f"{istWert:.5f}".replace('.', ',')
@@ -338,8 +335,8 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
             except PermissionError :
                 print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
                 pass
-            
-            print(f" V_Einlass: {v_ein:.2f} V | V_Durch: {v_durch:.2f} V | Druck: {istWert:.5f} mBar | Dauer der Stufe: {lokale_zeit:.3f} s")
+            print(f"relativer Fehler:{rel_fehler: .3} | Druck: {istWert:.5f} mBar | I-Anteil: {I_Anteil:.4f} | Stellgröße: {Stellgröße: .4f}")
+            print(f" V_Einlass: {v_ein:.2f} V | V_Durch: {v_durch:.2f} V | Dauer der Stufe: {lokale_zeit:.3f} s")
             print(f"Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f}") 
             print()
 
@@ -373,7 +370,7 @@ def druckeingabe ():
 def PI_regler_step(sollWert, istWert):
     global kp, ki, dt, fehler_historie
     
-    fehler = istWert - sollWert
+    fehler = sollWert - istWert
     rel_fehler = fehler /(sollWert) if sollWert != 0 else 0
     if abs(rel_fehler) <0.05: #I-Anteil erst einschalten wenn rel-fehler unter 5% ist
         fehler_historie.append(fehler)
