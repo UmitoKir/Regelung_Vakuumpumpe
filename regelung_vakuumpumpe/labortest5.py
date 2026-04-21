@@ -34,17 +34,24 @@ raw_array =b""
 resp_array = ""
 response_array = ""
 
-Dauer = 2700.0
-counter_limit = 300
+Dauer = 2400.0
+counter_limit = 150
 
 
-ventilspannungen1 = [10, 9.5, 9, 8.5, 8, 7.5, 7, 6.5, 6, 5.5, 5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5, 0]
-ventilspannungen2 = [0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5, 6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10]
+einlassventil_fallend = [10.0, 9, 8, 7.538, 7.411, 7.333, 7.267, 7.204, 7.033, 6.633, 6.122, 6.058, 
+                     5.997, 5.940, 5.873, 5.793, 5.711, 5.620, 5.515, 5.358, 5.323, 
+                     5.296, 5.268, 5.230, 5.184, 5.149, 5.104, 5.051, 5.003, 5.000, 
+                     4.998, 4.995, 4.992, 4.987, 4.980, 4.971, 4.958, 4.942, 4.940, 
+                     4.938, 4.936, 4.934, 4.932, 4.930, 4.5, 4, 3, 2, 1, 0]
+durchlassventil_fallend = [0, 1, 2, 3, 3.483, 3.738, 3.882, 4.022, 4.161, 4.294, 4.462, 4.664,
+                     4.692, 4.723, 4.758, 4.799, 4.845, 4.897, 4.956, 5.018, 5.113, 5.134, 5.159, 5.187,
+                     5.219, 5.255, 5.295, 5.341, 5.392, 5.448, 5.454, 5.460, 5.466, 5.472, 5.478, 5.484,
+                     5.491, 5.497, 5.657, 5.720, 5.795, 5.882, 5.980, 6.181, 6.597, 7, 8, 9, 10]
 test_konfigurationen = [
-    ("Einlass", ventilspannungen1),
-    ("Einlass", ventilspannungen2),
-    ("Durchlass", ventilspannungen2),
-    ("Durchlass", ventilspannungen1)
+    ("Einlass", einlassventil_fallend),
+    ("Einlass", durchlassventil_fallend),
+    ("Durchlass", durchlassventil_fallend),
+    ("Durchlass", einlassventil_fallend)
 ]
 
 untere_hystere = False
@@ -235,7 +242,7 @@ def sensorwahl_mit_hysterese(pressure):
 
 
 def main():
-    global ventilspannungen1, ventilspannungen2
+    global einlassventil_fallend, durchlassventil_fallend
     global test_konfigurationen
     filename = f"messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
     with open(filename, mode='w', newline='') as f:

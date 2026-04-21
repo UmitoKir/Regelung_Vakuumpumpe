@@ -167,10 +167,8 @@ def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druc
             p_str = f"{istWert:.5f}".replace('.', ',')
             vd_str = f"{v_durch:.2f}".replace('.', ',')
             ve_str = f"{v_ein:.2f}".replace('.', ',')
-            if tangent_counter >= counter_limit:
+            if tangent_counter >= counter_limit or lokale_zeit > Endzeit - 1.5:
                 dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',')  
-            elif lokale_zeit > Endzeit - 1.5:
-                dur_str = "0"
             else:
                 dur_str = ""
 
