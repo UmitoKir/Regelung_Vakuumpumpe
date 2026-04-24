@@ -251,8 +251,8 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
         kp = 0.2 / steigungsparameter
     else: 
         kp = 0.2
-    ki = 0.5* kp
-    print(f"Angepasster Kp: {kp:.4f} | Angepasster Ki: {ki:.4f} | Steigungsparameter: {steigungsparameter:.3f}")
+    ki = 0.1* kp
+    print(f"Angepasster Kp: {kp:.6f} | Angepasster Ki: {ki:.7f} | Steigungsparameter: {steigungsparameter:.3f}")
 
 
     relativer_fehler = abs(Solldruck - istWert) / Solldruck
@@ -310,13 +310,11 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
         Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
         
         v_ein = np.clip(V_ein_genau + (Stellgröße), 0, 10)
-        v_durch = np.clip((1 + rel_fehler) * V_durch, 0, 10)
-        # if v_durch < v_durch_alter_wert:
-        #     task.write([v_durch, v_ein])
-        #     v_durch_alter_wert = v_durch
-        # else: 
-        #     task.write([v_durch_alter_wert, v_ein])
-        task.write([10.0, v_ein])
+        v_durch = np.clip((1 + abs(rel_fehler)) * V_durch, 0, 10)
+        if v_durch < v_durch_alter_wert:
+            v_durch_alter_wert = v_durch
+        task.write([v_durch_alter_wert, v_ein])
+        #task.write([10.0, v_ein])
 
         #Stabilitätscheck
         schwankung = (istWert - old_pressure)/old_pressure
@@ -326,7 +324,7 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
         fehler_grenze = max_fehler_bestimmung(istWert)
         rel_fehler_grenze = 5 * fehler_grenze
 
-        if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze: 
+        if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and rel_fehler < 0.01: 
             if (tangent_counter == counter_limit) or lokale_zeit > Max_dauer - 1.5:
                 Stab_Startzeit = lokale_zeit
                 Endzeit = Stab_Startzeit + Dauer
@@ -362,7 +360,7 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
             print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
             pass
         print(f"relativer Fehler:{rel_fehler: .3} | Druck: {istWert:.5f} mBar | I-Anteil: {I_Anteil:.4f} | Stellgröße: {Stellgröße: .4f}")
-        print(f"V_Einlass: {v_ein:.2f} V | V_Durch: {v_durch:.2f} V | Dauer der Stufe: {lokale_zeit:.3f} s")
+        print(f"V_Einlass: {v_ein:.4f} V | V_Durch: {v_durch_alter_wert:.4f} V | Dauer der Stufe: {lokale_zeit:.3f} s")
         print(f"Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f}") 
         print(f"Fehlergrenze: {fehler_grenze: .4f} | rel. Fehlergrenze: {rel_fehler_grenze: .5f}")
         print()
