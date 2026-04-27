@@ -29,8 +29,8 @@ if sp is None:
 br = 38400
 to = 1
 
-kp=0.001 #0.1152
-ki= 0.0005 #0.0002 #0.2 standartmäßig
+kp=0.1 #0.1152; 0.2 für 400mBar
+ki= 0.01 #0.0002 #0.2 standartmäßig; 0.02 für 400mBar
 dt = 1
 old_pressure = 1000
 
@@ -101,7 +101,7 @@ def getpressure(ser): #"Druckauslesebefehl"
 def sensorwahl_mit_hysterese(pressure):
     global untere_hystere, obere_hystere, old_pressure, history_hp
     
-    istWert = old_pressure
+    #istWert = old_pressure
     # hp_smooth = old_pressure
     # if pressure[0] > 0.1:
     #     history_hp.append(pressure[0])
@@ -200,7 +200,7 @@ def max_fehler_bestimmung(istWert):
     elif istWert >= 7.5 and istWert < 10:
         fehler_grenze = 0.0014
     elif istWert >= 10:
-        fehler_grenze = 0.0001   
+        fehler_grenze = 0.001   
     return fehler_grenze
 
 
@@ -247,11 +247,11 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
     #task.write([10.0, 10.0])
     task.write([10.0, V_ein])
     steigungsparameter = steigung(V_ein)
-    if steigungsparameter > 1:
-        kp = 0.2 / steigungsparameter
-    else: 
-        kp = 0.2
-    ki = 0.1* kp
+    # if steigungsparameter > 1:
+    #     kp = 0.2 / steigungsparameter
+    # else: 
+    #     kp = 0.2
+    # ki = 0.1* kp
     print(f"Angepasster Kp: {kp:.6f} | Angepasster Ki: {ki:.7f} | Steigungsparameter: {steigungsparameter:.3f}")
 
 
@@ -292,9 +292,9 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
             time.sleep(0.01)
         lokale_zeit = time.time() - Startzeit
     
-    task.write([10.0, V_ein])
+    task.write([10.0, V_ein_genau])
     
-    Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
+    #Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
     compare_pressure = istWert
     Endzeit = Max_dauer
     v_durch_alter_wert = 10.0
@@ -308,13 +308,12 @@ def regelung(ser,task, dt, Startzeit, filename, Solldruck):
         old_pressure = istWert
         istWert = sensorwahl_mit_hysterese(pressure)
         Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
-        
-        v_ein = np.clip(V_ein_genau + (Stellgröße), 0, 10)
+        v_ein = np.clip(V_ein + (Stellgröße), 0, 10)
         v_durch = np.clip((1 + abs(rel_fehler)) * V_durch, 0, 10)
         if v_durch < v_durch_alter_wert:
             v_durch_alter_wert = v_durch
-        task.write([v_durch_alter_wert, v_ein])
-        #task.write([10.0, v_ein])
+        #task.write([v_durch_alter_wert, v_ein])
+        task.write([10.0, v_ein])
 
         #Stabilitätscheck
         schwankung = (istWert - old_pressure)/old_pressure
@@ -428,12 +427,12 @@ def PI_regler_step(sollWert, istWert):
     fehler = sollWert - istWert
     rel_fehler = fehler /(sollWert) if sollWert != 0 else 0
     if abs(rel_fehler) <0.05: #I-Anteil erst einschalten wenn rel-fehler unter 5% ist
-        fehler_historie.append(fehler)
+        fehler_historie.append(rel_fehler)
 
     else:
         fehler_historie.clear()
     I_Anteil = sum(fehler_historie) * dt
-    Stellgröße = kp * fehler + ki * I_Anteil
+    Stellgröße = kp * rel_fehler + ki * I_Anteil
     print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
     return (Stellgröße, rel_fehler, I_Anteil)
 
@@ -444,7 +443,7 @@ def main():
     global lut_v_durchlass_steigend, lut_v_durchlass_fallend, druck_durchlass_steigend, druck_durchlass_fallend
 
     #Pfad = input("Geben Sie den Pfad zur CSV-Datei ein: ").strip().replace('"', '')
-    Pfad = "C:\\Users\\labor\\Documents\\messung_ein_durcchlassventil_mehr_stützpunkte.csv"
+    Pfad = "C:\\Users\\labor\\Documents\\messung_ventil_mehr_stützpunkte_gut.csv"
     if not get_arrays_from_csv(Pfad):
         return
     
@@ -524,6 +523,24 @@ def main():
                 task.stop()
     except KeyboardInterrupt:
         print("Programm unterbrochen.")
+        try:
+            with nidaqmx.Task() as task:
+                task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
+                task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
+                task.start()
+                print("ao0: 0 , ao1: 4")
+                task.write([0, 4.0])
+                time.sleep(15)
+                print("ao0: 0 , ao1: 7")
+                task.write([0, 7.0])
+                time.sleep(10)
+                print("ao0: 0 , ao1: 10")
+                task.write([0, 10.0])
+                time.sleep(5)
+                task.write([0.0, 0.0])
+                task.stop()
+        except Exception as e:
+                pass
     except serial.SerialException as e:
         print(f'Fehler: {e}')
     except UnicodeDecodeError as e:

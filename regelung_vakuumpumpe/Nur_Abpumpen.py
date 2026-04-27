@@ -61,6 +61,21 @@ def main():
         input("Enter drücken zum Beenden...")
     except KeyboardInterrupt:
         print("Programm unterbrochen.")
+        with nidaqmx.Task() as task:
+            task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
+            task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
+            task.start()
+            print("ao0: 0 , ao1: 4")
+            task.write([0, 4.0])
+            time.sleep(20)
+            print("ao0: 0 , ao1: 7")
+            task.write([0, 7.0])
+            time.sleep(15)
+            print("ao0: 0 , ao1: 10")
+            task.write([0, 10.0])
+            time.sleep(5)
+            task.write([0.0, 0.0])
+            task.stop()
     except serial.SerialException as e:
         print(f'Fehler: {e}')
     except UnicodeDecodeError as e:
