@@ -2,47 +2,34 @@
 #install all the necessary libaries and debugger/compiler(python, python debugger, git etc.) to get it running on VS code
 #install with py -m pip install in the terminal all the necessary packages
 #matplotlib maybe also required
-
 import time
+import numpy as np
 import nidaqmx
 import serial
 import serial.tools.list_ports
 import csv
 import pandas as pd 
-import numpy as np
 from scipy.interpolate import PchipInterpolator
-
+#from function_lib import interpolation, druckeingabe, steigung, max_fehler_bestimmung, pressure_error_handler, sensorwahl_mit_hysterese, getpressure
 
 #der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
 ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
 sp=None
 #durch Vergleichen der Namen von allen Anschlüssen mit dem Namen vom Adapter RS232 zu usb wählt es den richtigen Port aus.
 print(f'Liste der angeschlossenen Geräte: {ports}')
-for p in ports: 
+for p in ports:
     print(p)
     if 'ATEN'in p.description:
         print(f'this is the Device: {p.device}')
         sp=p.device
-if sp is None:
-    print('Das Gerät wurde nicht gefunden.')
+    if sp is None:
+        print('Das Gerät wurde nicht gefunden.')
 
 br = 38400
 to = 1
 
-kp=0.1 #0.1152; 0.2 für 400mBar
-ki= 0.01 #0.0002 #0.2 standartmäßig; 0.02 für 400mBar
-dt = 1
+dt = 0.1
 old_pressure = 1000
-
-counter_limit = 100
-Dauer = 300
-Max_dauer = 1500
-
-raw_array = b""
-resp_array = ""
-response_array = ""
-
-
 Druck = []
 zeit = []
 Ventilspannung_Durchlass = []
@@ -59,15 +46,44 @@ druck_einlass_steigend = []
 druck_einlass_fallend = []
 druck_durchlass_steigend = []
 druck_durchlass_fallend = []
+csv_buffer = [] 
 fehler_historie = []
+
+prev_error = 0
+integral = 0
 
 untere_hystere = False
 obere_hystere = False
-history_hp = []
-
-csv_buffer = [] 
 
 
+#Kp wird ermittelt Bisher: 100mBar -> Kp=0.25-0.3, 200mBar -> Kp=0.0
+#kp= 0.4 * (1- np.exp(-1+(sollWert/1000))) #hi7er noch unklar wie dies ermittelt werden soll
+#kp = 0.3 * np.exp(-(sollWert / 1000))
+kp=0.01
+ki=0.0001  # 0.2 #standartmäßig
+kd = 1e-6
+Dauer = 120 #Dauer in Sekunden, die der Druck im Zielbereich bleiben soll, damit das Programm stoppt. (zusätzlich zum relativen Fehler von 1% und der Ableitung des Drucks von 0.001 mBar/s)
+Max_dauer = 1200
+counter_limit = 100
+
+raw_array = b""
+resp_array = ""
+response_array = ""
+
+def get_arrays_from_csv(dateipfad):
+    global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, StufenDauer
+    try:
+        df = pd.read_csv(dateipfad, sep=';', decimal=',', encoding='cp1252')
+        df.columns = df.columns.str.strip()  # Entfernt führende und nachfolgende Leerzeichen aus den Spaltennamen
+        zeit = df['Zeit_s'].values
+        Druck = df['Druck_mBar'].values
+        Ventilspannung_Durchlass = df['V_Durchlass'].values
+        Ventilspannung_Einlass = df['V_Einlass'].values
+        StufenDauer = df['Dauer bis Druckstabilitaet_s'].values
+    except Exception as e:
+        print(f"Fehler beim Laden: {e}")
+        return False
+    return True
 
 def getpressure(ser): #"Druckauslesebefehl"
     global raw_array, resp_array, response_array
@@ -98,14 +114,6 @@ def getpressure(ser): #"Druckauslesebefehl"
 
 def sensorwahl_mit_hysterese(pressure):
     global untere_hystere, obere_hystere, old_pressure, history_hp
-    
-    #istWert = old_pressure
-    # hp_smooth = old_pressure
-    # if pressure[0] > 0.1:
-    #     history_hp.append(pressure[0])
-    #     if len(history_hp) > 5:
-    #         history_hp.pop(0)
-    #     hp_smooth = sum(history_hp) / len(history_hp)
 
     if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
         istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
@@ -133,22 +141,28 @@ def sensorwahl_mit_hysterese(pressure):
         istWert = 1e-4
     return istWert
 
-       
+def PID(sollwert, istwert):
+    global fehler_historie, prev_error, kp, ki, kd, dt, integral
 
-def get_arrays_from_csv(dateipfad):
-    global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, StufenDauer
-    try:
-        df = pd.read_csv(dateipfad, sep=';', decimal=',', encoding='cp1252')
-        df.columns = df.columns.str.strip()  # Entfernt führende und nachfolgende Leerzeichen aus den Spaltennamen
-        zeit = df['Zeit_s'].values
-        Druck = df['Druck_mBar'].values
-        Ventilspannung_Durchlass = df['V_Durchlass'].values
-        Ventilspannung_Einlass = df['V_Einlass'].values
-        StufenDauer = df['Dauer bis Druckstabilitaet_s'].values
-    except Exception as e:
-        print(f"Fehler beim Laden: {e}")
-        return False
-    return True
+    error = sollwert-istwert
+    rel_error = error/sollwert
+    # if len(fehler_historie)< 100:
+    #     fehler_historie.append(error)
+    # else: 
+    #     fehler_historie.pop(0)
+    #     fehler_historie.append(error)
+    new_integral = integral + (error*dt)
+    derivative = (error - prev_error)/dt
+    potential_output = (kp*error)+(ki*new_integral)+(kd*derivative)
+    if potential_output > 10.0:
+        output = 10.0
+    elif potential_output < 0.0:
+        output = 0.0
+    else: 
+        output = potential_output
+        integral = new_integral
+    prev_error = error
+    return output, derivative, rel_error
 
 def pressure_error_handler(ser, pressure, filename, Startzeit):
     retry_count = 0
@@ -200,172 +214,6 @@ def max_fehler_bestimmung(istWert):
     elif istWert >= 10:
         fehler_grenze = 0.001   
     return fehler_grenze
-
-
-# noch unvollständig 
-def regelung(ser,task, dt, Startzeit, filename, Solldruck):
-        
-    global old_pressure, csv_buffer, raw_array, resp_array, response_array, counter_limit, Dauer, Max_dauer, kp, ki
-    global lut_v_einlass_fallend, druck_einlass_fallend, lut_v_einlass_steigend, druck_einlass_steigend, lut_v_durchlass_fallend, druck_durchlass_fallend, lut_v_durchlass_steigend, druck_durchlass_steigend
-
-    tangent_counter = 0
-    Endzeit = 3600
-    lokale_zeit = 0
-    
-    pressure = getpressure(ser)
-    result = pressure_error_handler(ser, pressure, filename, Startzeit)
-    if result == False:
-        return
-    else: 
-        pressure = result
-    
-    istWert = sensorwahl_mit_hysterese(pressure)
-    compare_pressure =  istWert
-
-    V_ein_fallend = interpolation(lut_v_einlass_fallend, druck_einlass_fallend)
-    #V_ein_steigend = interpolation(lut_v_einlass_steigend, druck_einlass_steigend)
-    V_durch_fallend = interpolation(lut_v_durchlass_fallend, druck_durchlass_fallend)
-    #V_durch_steigend = interpolation(lut_v_durchlass_steigend, druck_durchlass_steigend)
-    if V_ein_fallend is None or V_durch_fallend is None:
-        print("Fehler: Interpolation fehlgeschlagen, LUT leer?")
-        return
-    
-    V_ein_genau = V_ein_fallend(Solldruck)
-    faktor = steigung(V_ein_genau)/1740
-    #print(f"Vorfaktor für Anfangsstellgröße: {faktor:.3f} | Solldruck: {Solldruck:.4f} mBar")
-    Solldruck_img = Solldruck * faktor
-    if Solldruck > 0.03 and Solldruck_img > 0.03:
-        V_ein = V_ein_fallend(Solldruck_img)
-    elif Solldruck <= 0.03 or Solldruck_img <= 0.03:
-        V_ein = 10.0
-    #V_ein = V_ein_steigend(Solldruck * vorfaktor)
-    V_durch = V_durch_fallend(Solldruck)
-    print(f"Anfangs Stellgröße: {V_ein:.4f} V anstatt {V_ein_genau: .4f}V")
-    
-    #task.write([10.0, 10.0])
-    task.write([10.0, V_ein])
-    steigungsparameter = steigung(V_ein)
-    # if steigungsparameter > 1:
-    #     kp = 0.2 / steigungsparameter
-    # else: 
-    #     kp = 0.2
-    # ki = 0.1* kp
-    print(f"Angepasster Kp: {kp:.6f} | Angepasster Ki: {ki:.7f} | Steigungsparameter: {steigungsparameter:.3f}")
-
-
-    relativer_fehler = abs(Solldruck - istWert) / Solldruck
-    while (relativer_fehler >=0.05 and lokale_zeit < Max_dauer):
-        print(f"relativer Fehler:{relativer_fehler: .3} | Solldruck:{Solldruck:.4} | Istdruck: {istWert:.4} | V_Einlass: {V_ein:.2f} V")
-        pressure = getpressure(ser)
-        result = pressure_error_handler(ser, pressure, filename, Startzeit)
-        if result == False:
-            return
-        else: 
-            pressure = result
-        old_pressure = istWert
-        istWert = sensorwahl_mit_hysterese(pressure)
-        relativer_fehler = abs(Solldruck - istWert) / Solldruck
-
-        dur_str = ""
-        t_str = f"{lokale_zeit:.3f}".replace('.', ',')
-        p_str = f"{istWert:.5f}".replace('.', ',')
-        vd_str = "10,0"
-        ve_str = "0.0"#f"{V_ein:.2f}".replace('.', ',')
-        
-        response_str = str(response_array).replace('.', ',')  if response_array else ''
-
-        csv_buffer.append([t_str, p_str, vd_str, ve_str, dur_str, response_str])
-
-
-        try: 
-            with open (filename, mode='a', newline='') as f:
-                writer = csv.writer(f, delimiter=';')
-                while csv_buffer:
-                    writer.writerow(csv_buffer[0])
-                    csv_buffer.pop(0)
-        except PermissionError :
-            print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
-            pass
-        while time.time() - Startzeit - lokale_zeit < dt:
-            time.sleep(0.01)
-        lokale_zeit = time.time() - Startzeit
-    
-    task.write([10.0, V_ein_genau])
-    
-    #Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
-    compare_pressure = istWert
-    Endzeit = Max_dauer
-    v_durch_alter_wert = 10.0
-    while lokale_zeit < Endzeit and istWert >= 0.001:       
-        pressure = getpressure(ser)
-        result = pressure_error_handler(ser, pressure, filename, Startzeit)
-        if result == False:
-            return
-        else: 
-            pressure = result
-        old_pressure = istWert
-        istWert = sensorwahl_mit_hysterese(pressure)
-        Stellgröße, rel_fehler, I_Anteil= PI_regler_step(Solldruck, istWert)
-        v_ein = np.clip(V_ein + (Stellgröße), 0, 10)
-        v_durch = np.clip((1 + abs(rel_fehler)) * V_durch, 0, 10)
-        if v_durch < v_durch_alter_wert:
-            v_durch_alter_wert = v_durch
-        #task.write([v_durch_alter_wert, v_ein])
-        task.write([10.0, v_ein])
-
-        #Stabilitätscheck
-        schwankung = (istWert - old_pressure)/old_pressure
-        schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure
-        #diff_compare_to_Solldruck = compare_pressure - Solldruck
-        #diff_istWert_Solldruck = istWert - Solldruck
-        fehler_grenze = max_fehler_bestimmung(istWert)
-        rel_fehler_grenze = 5 * fehler_grenze
-
-        if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and rel_fehler < 0.01: 
-            if (tangent_counter == counter_limit) or lokale_zeit > Max_dauer - 1.5:
-                Stab_Startzeit = lokale_zeit
-                Endzeit = Stab_Startzeit + Dauer
-                dur_str = f"{(lokale_zeit):.3f}".replace('.', ',')
-            elif tangent_counter > counter_limit and lokale_zeit > Endzeit -1.5:
-                dur_str = "300,0"
-            else:
-                dur_str = ""
-            tangent_counter += 1
-        elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze):
-            #if diff_compare_to_Solldruck > diff_istWert_Solldruck and diff_istWert_Solldruck * diff_compare_to_Solldruck >= 0:
-            tangent_counter = 0
-            Endzeit = Max_dauer
-            compare_pressure = istWert
-            dur_str = ""
-        
-        t_str = f"{lokale_zeit:.3f}".replace('.', ',')
-        p_str = f"{istWert:.5f}".replace('.', ',')
-        vd_str = f"{v_durch:.2f}".replace('.', ',')
-        ve_str = f"{v_ein:.2f}".replace('.', ',')
-        
-        response_str = str(response_array).replace('.', ',')  if response_array else ''
-
-        csv_buffer.append([t_str, p_str, vd_str, ve_str, dur_str, response_str])
-
-        try: 
-            with open (filename, mode='a', newline='') as f:
-                writer = csv.writer(f, delimiter=';')
-                while csv_buffer:
-                    writer.writerow(csv_buffer[0])
-                    csv_buffer.pop(0)
-        except PermissionError :
-            print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
-            pass
-        print(f"relativer Fehler:{rel_fehler: .3} | Druck: {istWert:.5f} mBar | I-Anteil: {I_Anteil:.4f} | Stellgröße: {Stellgröße: .4f}")
-        print(f"V_Einlass: {v_ein:.4f} V | V_Durch: {v_durch_alter_wert:.4f} V | Dauer der Stufe: {lokale_zeit:.3f} s")
-        print(f"Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f}") 
-        print(f"Fehlergrenze: {fehler_grenze: .4f} | rel. Fehlergrenze: {rel_fehler_grenze: .5f}")
-        print()
-
-        while time.time() - Startzeit - lokale_zeit < dt:
-            time.sleep(0.01)
-        lokale_zeit = time.time() - Startzeit
-
 
 def interpolation(ventilspannungen, druck):
     v_data = np.array(ventilspannungen)
@@ -419,20 +267,114 @@ def druckeingabe ():
         print("Ungültige Eingabe. Bitte geben Sie eine Zahl ein.")
         return druckeingabe()
 
-def PI_regler_step(sollWert, istWert):
-    global kp, ki, dt, fehler_historie
-    
-    fehler = sollWert - istWert
-    rel_fehler = fehler /(sollWert) if sollWert != 0 else 0
-    if abs(rel_fehler) <0.05: #I-Anteil erst einschalten wenn rel-fehler unter 5% ist
-        fehler_historie.append(rel_fehler)
 
-    else:
-        fehler_historie.clear()
-    I_Anteil = sum(fehler_historie) * dt
-    Stellgröße = kp * rel_fehler + ki * I_Anteil
-    print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
-    return (Stellgröße, rel_fehler, I_Anteil)
+
+
+def regelung(ser, task, Sollwert, filename, Startzeit):
+    global old_pressure, csv_buffer, raw_array, resp_array, response_array, counter_limit, Dauer, kp, ki, dt
+    global lut_v_einlass_fallend, druck_einlass_fallend, lut_v_einlass_steigend, druck_einlass_steigend, lut_v_durchlass_fallend, druck_durchlass_fallend, lut_v_durchlass_steigend, druck_durchlass_steigend
+
+    rel_fehler = 1
+    lokale_zeit = 0
+
+    pressure = getpressure(ser)
+    result = pressure_error_handler(ser, pressure, filename, Startzeit)
+    if result == False:
+        return
+    else: 
+        pressure = result
+    
+    istWert = sensorwahl_mit_hysterese(pressure)
+    compare_pressure =  istWert
+
+    V_ein_fallend = interpolation(lut_v_einlass_fallend, druck_einlass_fallend)
+    #V_ein_steigend = interpolation(lut_v_einlass_steigend, druck_einlass_steigend)
+    V_durch_fallend = interpolation(lut_v_durchlass_fallend, druck_durchlass_fallend)
+    #V_durch_steigend = interpolation(lut_v_durchlass_steigend, druck_durchlass_steigend)
+    if V_ein_fallend is None or V_durch_fallend is None:
+        print("Fehler: Interpolation fehlgeschlagen, LUT leer?")
+        return
+    V_ein_genau = V_ein_fallend(Sollwert)
+    #faktor = steigung(V_ein_genau)/1740
+
+
+    Endzeit = Max_dauer
+    while lokale_zeit < Endzeit and istWert >= 0.001: #relativer Fehler kleiner 1%
+        pressure = getpressure(ser)
+        result = pressure_error_handler(ser, pressure, filename, Startzeit)
+        if result == False:
+            return
+        else: 
+            pressure = result
+        istWert = sensorwahl_mit_hysterese(pressure)
+        
+        Stellgröße, d_anteil, rel_fehler= PID(Sollwert, istWert)
+        v_durch = 10
+
+        #V_ein muss noch bestimmt werden
+        v_ein = V_ein_genau
+        task.write([v_durch, v_ein])
+
+        #Stabilitätscheck
+        schwankung = (istWert - old_pressure)/old_pressure
+        schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure
+        fehler_grenze = max_fehler_bestimmung(istWert)
+        rel_fehler_grenze = 5 * fehler_grenze
+
+        if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and rel_fehler < 0.01: 
+            if (tangent_counter == counter_limit) or lokale_zeit > Max_dauer - 1.5:
+                Stab_Startzeit = lokale_zeit
+                Endzeit = Stab_Startzeit + Dauer
+                dur_str = f"{(lokale_zeit):.3f}".replace('.', ',')
+            elif tangent_counter > counter_limit and lokale_zeit > Endzeit -1.5:
+                dur_str = "300,0"
+            else:
+                dur_str = ""
+            tangent_counter += 1
+        elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze):
+            #if diff_compare_to_Solldruck > diff_istWert_Solldruck and diff_istWert_Solldruck * diff_compare_to_Solldruck >= 0:
+            tangent_counter = 0
+            Endzeit = Max_dauer
+            compare_pressure = istWert
+            dur_str = ""
+        
+        t_str = f"{lokale_zeit:.3f}".replace('.', ',')
+        p_str = f"{istWert:.5f}".replace('.', ',')
+        vd_str = f"{v_durch:.2f}".replace('.', ',')
+        ve_str = f"{v_ein:.2f}".replace('.', ',')
+        stellgröße_str = f"{Stellgröße:.5f}".replace('.', ',')
+        
+        response_str = str(response_array).replace('.', ',')  if response_array else ''
+
+        csv_buffer.append([t_str, p_str, vd_str, ve_str, stellgröße_str, dur_str, response_str])
+        try: 
+            with open (filename, mode='a', newline='') as f:
+                writer = csv.writer(f, delimiter=';')
+                while csv_buffer:
+                    writer.writerow(csv_buffer[0])
+                    csv_buffer.pop(0)
+        except PermissionError :
+            print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
+            pass
+
+        print(f"relativer Fehler:{rel_fehler: .4} | Druck: {istWert:.5f} mBar | I-Anteil: {integral:.6f}")
+        print(f"D-Anteil: {d_anteil: .6f} | Stellgröße: {Stellgröße: .4f} | V_Ein: {v_ein:.4f} V | V_Durch: {v_durch:.4f} V ")
+        print(f"Dauer der Stufe: {lokale_zeit:.3f} s | Tangent Counter: {tangent_counter}") 
+        print(f"Schwankung: {schwankung:.5f} | rel. Schwankung: {schwankung_in_relation_zum_vergleich:.5f}")
+        print(f"Fehlergrenze: {fehler_grenze: .4f} | rel. Fehlergrenze: {rel_fehler_grenze: .5f}")
+        print()
+
+
+        old_pressure = istWert
+        wartezeit = Startzeit + lokale_zeit
+        while time.time() - wartezeit < dt:
+            time.sleep(0.01)
+        lokale_zeit = time.time() - Startzeit
+
+
+
+
+    
 
 
 def main():
@@ -441,9 +383,8 @@ def main():
     global lut_v_durchlass_steigend, lut_v_durchlass_fallend, druck_durchlass_steigend, druck_durchlass_fallend
 
     #Pfad = input("Geben Sie den Pfad zur CSV-Datei ein: ").strip().replace('"', '')
-    Pfad = "C:\\Users\\labor\\Documents\\messung_ventil_mehr_stützpunkte_gut.csv"
-    if not get_arrays_from_csv(Pfad):
-        return
+    Pfad = r"C:\Users\labor\Documents\messung_ventil_mehr_stützpunkte_gut.csv"
+    get_arrays_from_csv(Pfad)
     
     filename = f"messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
     with open(filename, mode='w', newline='') as f:
@@ -455,6 +396,9 @@ def main():
             stab_ventilspannung_einlass.append(Ventilspannung_Einlass[i])
             stab_ventilspannung_durchlass.append(Ventilspannung_Durchlass[i])
             stab_druck.append(Druck[i])
+    
+    print(f"länge stab_druck: {len(stab_druck)}")
+    print()
 
     for i in range(1, len(stab_ventilspannung_einlass)):
         v_aktuell = stab_ventilspannung_einlass[i]
@@ -477,10 +421,18 @@ def main():
                 druck_durchlass_fallend.append(stab_druck[i])
 
 
-    Druckwerte = [900, 800, 700, 600, 500, 400, 300, 200, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
+    Druckwerte = [900, 800, 700, 600, 500, 400, 300, 200, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10,
+                  9, 8, 7, 6, 5, 4, 3, 2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 
+                  0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
     V_ein_fallend = interpolation(lut_v_einlass_fallend, druck_einlass_fallend)
-    p_min = min(druck_einlass_fallend)
-    p_max = max(druck_einlass_fallend)
+    if len(druck_einlass_fallend) > 0:
+        p_min = min(druck_einlass_fallend)
+        p_max = max(druck_einlass_fallend)
+        # ... rest of your LUT logic ...
+    else:
+        print("Warning: No falling pressure data found in CSV. Using defaults.")
+        p_min, p_max = 0.001, 1000  # Fallback values
+
     for i in Druckwerte:
         i_clip = np.clip(i, p_min, p_max)
         v = float(V_ein_fallend(i_clip))
@@ -503,8 +455,7 @@ def main():
                 task.start()
 
                 Solldruck = druckeingabe()
-                steigungsparameter = steigung(V_ein_fallend(Solldruck))
-                regelung(ser, task, dt, Startzeit=time.time(), filename=filename, Solldruck=Solldruck)
+                regelung(ser, task,  Solldruck, filename=filename, Startzeit=time.time())
                 
                 print("ao0: 0 , ao1: 4")
                 task.write([0, 4.0])
@@ -563,5 +514,6 @@ def main():
                     ser.close()
                     print('Verbindung closed. ')
             except Exception as e:
-                pass
+                pass   
 
+main()

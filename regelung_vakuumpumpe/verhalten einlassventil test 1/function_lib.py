@@ -12,23 +12,6 @@ import pandas as pd
 import numpy as np
 from scipy.interpolate import PchipInterpolator
 
-
-#der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
-ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
-sp=None
-#durch Vergleichen der Namen von allen Anschlüssen mit dem Namen vom Adapter RS232 zu usb wählt es den richtigen Port aus.
-print(f'Liste der angeschlossenen Geräte: {ports}')
-for p in ports: 
-    print(p)
-    if 'ATEN'in p.description:
-        print(f'this is the Device: {p.device}')
-        sp=p.device
-if sp is None:
-    print('Das Gerät wurde nicht gefunden.')
-
-br = 38400
-to = 1
-
 kp=0.1 #0.1152; 0.2 für 400mBar
 ki= 0.01 #0.0002 #0.2 standartmäßig; 0.02 für 400mBar
 dt = 1
@@ -69,8 +52,7 @@ csv_buffer = []
 
 
 
-def getpressure(ser): #"Druckauslesebefehl"
-    global raw_array, resp_array, response_array
+def getpressure(ser, raw_array, resp_array, response_array): #"Druckauslesebefehl"
     try:
         raw = ser.readline()
         raw_array = raw
@@ -96,39 +78,24 @@ def getpressure(ser): #"Druckauslesebefehl"
         ser.flushInput() # Puffer leeren 
         return None
 
-def sensorwahl_mit_hysterese(pressure):
-    global untere_hystere, obere_hystere, old_pressure, history_hp
-    
-    #istWert = old_pressure
-    # hp_smooth = old_pressure
-    # if pressure[0] > 0.1:
-    #     history_hp.append(pressure[0])
-    #     if len(history_hp) > 5:
-    #         history_hp.pop(0)
-    #     hp_smooth = sum(history_hp) / len(history_hp)
+def sensorwahl_mit_hysterese(pressure, untere_hystere, obere_hystere, old_pressure):
 
     if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
         istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
         untere_hystere = False
-        #print("Sensor HP")
     elif pressure[1]< 0.5: #ab <0.5mBar immer sensor 2 verwenden
         istWert = pressure[1]
         obere_hystere = False
-        #print("Sensor LP")
     elif pressure[1] >= 0.5 and old_pressure < pressure[1] and old_pressure < 0.5: #wenn man von < 0.5mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
         istWert = pressure[1]
         untere_hystere = True
-        #print("Sensor LP")
     elif pressure[1] >= 0.5 and untere_hystere == True: #wenn man von < 0.5mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
         istWert = pressure[1]
-        #print("Sensor LP")
     elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
-        istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
+        istWert = pressure[0]
         obere_hystere = True
-        #print("Sensor HP")
     elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
-        istWert = pressure[0] #round(pressure[0], 2) #round(hp_smooth, 2)
-        #print("Sensor HP")
+        istWert = pressure[0]
     if istWert <=0:
         istWert = 1e-4
     return istWert
@@ -136,19 +103,15 @@ def sensorwahl_mit_hysterese(pressure):
        
 
 def get_arrays_from_csv(dateipfad):
-    global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, StufenDauer
     try:
         df = pd.read_csv(dateipfad, sep=';', decimal=',', encoding='cp1252')
         df.columns = df.columns.str.strip()  # Entfernt führende und nachfolgende Leerzeichen aus den Spaltennamen
-        zeit = df['Zeit_s'].values
-        Druck = df['Druck_mBar'].values
-        Ventilspannung_Durchlass = df['V_Durchlass'].values
-        Ventilspannung_Einlass = df['V_Einlass'].values
-        StufenDauer = df['Dauer bis Druckstabilitaet_s'].values
+        return (df['Zeit_s'].values, df['Druck_mBar'].values, 
+                df['V_Durchlass'].values, df['V_Einlass'].values,
+                df['Dauer bis Druckstabilitaet_s'].values)
     except Exception as e:
         print(f"Fehler beim Laden: {e}")
-        return False
-    return True
+        return None
 
 def pressure_error_handler(ser, pressure, filename, Startzeit):
     retry_count = 0
@@ -397,8 +360,7 @@ def x_interpoliert(ventilspannungen, druck):
     else:
         return None
 
-def steigung(x):
-    global lut_v_einlass_fallend, druck_einlass_fallend
+def steigung(x, lut_v_einlass_fallend, druck_einlass_fallend):
     funktion = x_interpoliert(lut_v_einlass_fallend, druck_einlass_fallend)
     if funktion is None: 
         print("Fehler: Interpolation fehlgeschlagen, LUT leer?")
@@ -419,9 +381,7 @@ def druckeingabe ():
         print("Ungültige Eingabe. Bitte geben Sie eine Zahl ein.")
         return druckeingabe()
 
-def PI_regler_step(sollWert, istWert):
-    global kp, ki, dt, fehler_historie
-    
+def PI_regler_step(sollWert, istWert, kp, ki, dt, fehler_historie):
     fehler = sollWert - istWert
     rel_fehler = fehler /(sollWert) if sollWert != 0 else 0
     if abs(rel_fehler) <0.05: #I-Anteil erst einschalten wenn rel-fehler unter 5% ist
@@ -434,134 +394,4 @@ def PI_regler_step(sollWert, istWert):
     print(f"Fehler: {fehler:.2f} | Relativer Fehler: {rel_fehler:.4f} | Stellgröße: {Stellgröße:.2f}")
     return (Stellgröße, rel_fehler, I_Anteil)
 
-
-def main():
-    global Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, zeit, StufenDauer, stab_druck
-    global lut_v_einlass_steigend, lut_v_einlass_fallend, druck_einlass_steigend, druck_einlass_fallend 
-    global lut_v_durchlass_steigend, lut_v_durchlass_fallend, druck_durchlass_steigend, druck_durchlass_fallend
-
-    #Pfad = input("Geben Sie den Pfad zur CSV-Datei ein: ").strip().replace('"', '')
-    Pfad = "C:\\Users\\labor\\Documents\\messung_ventil_mehr_stützpunkte_gut.csv"
-    if not get_arrays_from_csv(Pfad):
-        return
-    
-    filename = f"messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
-    with open(filename, mode='w', newline='') as f:
-        writer = csv.writer(f, delimiter=';')
-        writer.writerow(['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Dauer bis Druckstabilitaet_s', 'response'])
-
-    for i in range(len(StufenDauer)):
-        if not pd.isna(StufenDauer[i]):
-            stab_ventilspannung_einlass.append(Ventilspannung_Einlass[i])
-            stab_ventilspannung_durchlass.append(Ventilspannung_Durchlass[i])
-            stab_druck.append(Druck[i])
-
-    for i in range(1, len(stab_ventilspannung_einlass)):
-        v_aktuell = stab_ventilspannung_einlass[i]
-        v_vorher = stab_ventilspannung_einlass[i-1]
-        
-        if stab_ventilspannung_durchlass[i] == 10:
-            if v_aktuell > v_vorher:
-                lut_v_einlass_steigend.append(v_aktuell)
-                druck_einlass_steigend.append(stab_druck[i])
-            elif v_aktuell < v_vorher:
-                lut_v_einlass_fallend.append(v_aktuell)
-                druck_einlass_fallend.append(stab_druck[i])
-
-        if stab_ventilspannung_einlass[i] == 0:
-            if v_aktuell > v_vorher:
-                lut_v_durchlass_steigend.append(stab_ventilspannung_durchlass[i])
-                druck_durchlass_steigend.append(stab_druck[i])
-            elif v_aktuell < v_vorher:
-                lut_v_durchlass_fallend.append(stab_ventilspannung_durchlass[i])
-                druck_durchlass_fallend.append(stab_druck[i])
-
-
-    Druckwerte = [900, 800, 700, 600, 500, 400, 300, 200, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
-    V_ein_fallend = interpolation(lut_v_einlass_fallend, druck_einlass_fallend)
-    p_min = min(druck_einlass_fallend)
-    p_max = max(druck_einlass_fallend)
-    for i in Druckwerte:
-        i_clip = np.clip(i, p_min, p_max)
-        v = float(V_ein_fallend(i_clip))
-        v_clip = np.clip(v, min(lut_v_einlass_fallend), max(lut_v_einlass_fallend))
-        s = steigung(v_clip)
-        #s_inv = -1*v if s is not None else None
-        #print(f"steigung an der Stelle {v: .4f} V bei {i} mBar ist {s: .4f}mBar/V")
-    
-    task_completed = False
-    try:
-        ser = serial.Serial(port=sp, baudrate=br, timeout=to) #stellt Verbindung mit der Vakuumpumpe her (öffnet Chanel)
-        print(f'Verbindung hergestellt mit {sp}')
-
-        system = nidaqmx.system.System.local()
-        for dev in system.devices:
-            print(dev.name, "-", dev.product_type)
-        with nidaqmx.Task() as task:
-                task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
-                task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
-                task.start()
-
-                Solldruck = druckeingabe()
-                steigungsparameter = steigung(V_ein_fallend(Solldruck))
-                regelung(ser, task, dt, Startzeit=time.time(), filename=filename, Solldruck=Solldruck)
-                
-                print("ao0: 0 , ao1: 4")
-                task.write([0, 4.0])
-                time.sleep(20)
-                print("ao0: 0 , ao1: 7")
-                task.write([0, 7.0])
-                time.sleep(15)
-                print("ao0: 0 , ao1: 10")
-                task.write([0, 10.0])
-                time.sleep(5)
-                task.write([0.0, 0.0])  # Alle Ausgänge auf 0 setzen
-                task_completed = True
-                print('Erfolgreich abgeschlossen. Verbindung wird beendet')
-                task.stop()
-    except KeyboardInterrupt:
-        print("Programm unterbrochen.")
-        try:
-            with nidaqmx.Task() as task:
-                task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
-                task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
-                task.start()
-                print("ao0: 0 , ao1: 4")
-                task.write([0, 4.0])
-                time.sleep(15)
-                print("ao0: 0 , ao1: 7")
-                task.write([0, 7.0])
-                time.sleep(10)
-                print("ao0: 0 , ao1: 10")
-                task.write([0, 10.0])
-                time.sleep(5)
-                task.write([0.0, 0.0])
-                task.stop()
-        except Exception as e:
-                pass
-    except serial.SerialException as e:
-        print(f'Fehler: {e}')
-    except UnicodeDecodeError as e:
-        print(f'Fehler bei der Dekodierung: {e}')
-    finally:
-        if not task_completed:
-            try: 
-                with nidaqmx.Task() as task:
-                    task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
-                    task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
-                    task.start()
-                    task.write([0.0, 0.0])  # Alle Ausgänge auf 0 setzen
-                    if 'ser' in locals() and ser.is_open:
-                        ser.close()
-                        print('Verbindung closed. ')
-                    task.stop()
-            except Exception as e:
-                pass
-        else: 
-            try:
-                if 'ser' in locals() and ser.is_open:
-                    ser.close()
-                    print('Verbindung closed. ')
-            except Exception as e:
-                pass
 
