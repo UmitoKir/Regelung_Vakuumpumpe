@@ -71,24 +71,24 @@ def interpolation(ventilspannungen, druck, name="Ventil"):
             pchip = PchipInterpolator(v_unique, p_unique)
             y_interp_pchip = pchip(x_interp)
 
-        idx_inv = np.argsort(p_unique)
-        p_inv_sorted = p_unique[idx_inv]
-        v_inv_sorted = v_unique[idx_inv]
-        p_inv_final, inv_unique_idx = np.unique(p_inv_sorted, return_index=True)
-        v_inv_final = v_inv_sorted[inv_unique_idx]
-        if len(p_inv_final) > 1:
+        # idx_inv = np.argsort(p_unique)
+        # p_inv_sorted = p_unique[idx_inv]
+        # v_inv_sorted = v_unique[idx_inv]
+        # p_inv_final, inv_unique_idx = np.unique(p_inv_sorted, return_index=True)
+        # v_inv_final = v_inv_sorted[inv_unique_idx]
+        # if len(p_inv_final) > 1:
 
-            x_interp_pchip = PchipInterpolator(p_inv_final, v_inv_final)
+        #     x_interp_pchip = PchipInterpolator(p_inv_final, v_inv_final)
 
-            Druckwerte = [900, 800, 700, 600, 500, 400, 300, 200, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
-            #nur Werte abfragen die auch gemessen werden konnten
-            Druckwerte_valid = [p for p in Druckwerte if min(p_inv_final) <= p <= max(p_inv_final)]
-            Ventilspannungen_interp = x_interp_pchip(Druckwerte_valid)
+        #     Druckwerte = [900, 800, 700, 600, 500, 400, 300, 200, 100, 90, 80, 70, 60, 50, 40, 30, 20, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.09, 0.08, 0.07, 0.06, 0.05, 0.04, 0.03, 0.02, 0.01, 0.009, 0.008, 0.007, 0.006, 0.005, 0.004, 0.003, 0.002, 0.001]
+        #     #nur Werte abfragen die auch gemessen werden konnten
+        #     Druckwerte_valid = [p for p in Druckwerte if min(p_inv_final) <= p <= max(p_inv_final)]
+        #     Ventilspannungen_interp = x_interp_pchip(Druckwerte_valid)
 
-            print(f"\n--- Interpolierte Sollwerte (PCHIP Invers) für {name} ---")
-            print("Druck [mBar]  ->  Benötigte Spannung [V]")
-            for p, v in zip(Druckwerte, Ventilspannungen_interp):
-                print(f"{p:12.4f}  ->  {v:6.3f} V")
+        #     print(f"\n--- Interpolierte Sollwerte (PCHIP Invers) für {name} ---")
+        #     print("Druck [mBar]  ->  Benötigte Spannung [V]")
+        #     for p, v in zip(Druckwerte, Ventilspannungen_interp):
+        #         print(f"{p:12.4f}  ->  {v:6.3f} V")
                 
         if len(v_unique) > 2:
             # 'quadratic' entspricht dem 2. Grad
@@ -102,7 +102,9 @@ def interpolation(ventilspannungen, druck, name="Ventil"):
 def main():
     global Ableitung, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, zeit, StufenDauer, stab_druck
     global v_einlass_steigend, v_einlass_fallend, druck_einlass_steigend, druck_einlass_fallend,  v_durchlass_steigend, v_durchlass_fallend, druck_durchlass_steigend, druck_durchlass_fallend
-    Pfad = input("Geben Sie den Pfad zur CSV-Datei ein: ").strip().replace('"', '')
+    
+    Pfad =  r"C:\Users\labor\Documents\messung_ventil_mehr_stützpunkte_gut.csv" 
+    #Pfad = input("Geben Sie den Pfad zur CSV-Datei ein: ").strip().replace('"', '')
 
     if not get_arrays_from_csv(Pfad):
         return
@@ -255,6 +257,45 @@ def main():
     plt.xlabel("Durchlassventilspannung [V]")
     plt.ylabel("Druck [mbar]")
     plt.legend()
+
+    dp_dV = []
+    for i in range(len(x_interp_f_ein)-1):
+        delta_v = x_interp_f_ein[i+1] - x_interp_f_ein[i]
+        delta_p = y_interp_pchip_f_ein[i+1] - y_interp_pchip_f_ein[i]
+        sekante = abs(delta_p / delta_v)
+        dp_dV .append(sekante)
+    
+    dp_dV.append(dp_dV[-1])
+    
+    max_idx = np.argmax(dp_dV)
+    max_steigung = dp_dV[max_idx]
+    max_volt = x_interp_f_ein[max_idx]
+    max_druck = y_interp_pchip_f_ein[max_idx]
+    print("\n=======================================================")
+    print(f"-> Höchste Steigung: {max_steigung:.2f} mBar/V")
+    print(f"-> Bei Spannung:     {max_volt:.3f} V")
+    print(f"-> Bei Druck:        {max_druck:.2f} mBar")
+
+    fig9, ax1 = plt.subplots(num=9, figsize=(10, 6))
+    # Linke Y-Achse: Druck [mbar] (Deine originale PCHIP-Kurve)
+    ax1.plot(v_einlass_fallend, druck_einlass_fallend, 'o-', color='black', linewidth=1.5, label='Messpunkte fallend')
+    ax1.plot(x_interp_f_ein, y_interp_pchip_f_ein, color='blue', linewidth=1.5, label='PCHIP-Interpolation fallend')
+    ax1.set_xlabel("Einlassventilspannung [V]")
+    ax1.set_ylabel("Druck [mbar]", color='blue')
+    ax1.tick_params(axis='y', labelcolor='blue')
+    ax1.invert_xaxis()
+    ax1.grid(True, which="both", ls="-", alpha=0.5)
+    # Rechte Y-Achse: Die manuell berechnete Steigung |dp/dV|
+    ax2 = ax1.twinx()
+    ax2.plot(x_interp_f_ein, dp_dV, color='red', linewidth=1.5, linestyle='--', label='Manuelle Steigung |dp/dV| (Sekante)')
+    ax2.set_ylabel("Steilheit [mBar / V]", color='red')
+    ax2.tick_params(axis='y', labelcolor='red')
+    lines1, labels1 = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+    
+    plt.title("Eingeschwungener Druck in mBar (lin) Einlassventil + Manuelle Steigung")
+    plt.tight_layout()
 
     plt.tight_layout()
 
