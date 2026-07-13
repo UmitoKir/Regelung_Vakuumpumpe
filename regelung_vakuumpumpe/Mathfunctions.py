@@ -2,24 +2,44 @@ from scipy.interpolate import PchipInterpolator
 import numpy as np
 
 class ControllSystem:
-    def __init__(self, kp, ki, kd, dt=1.0):
+    def __init__(self, kp, ki, kd, sollwert, dt=1.0, ambient_pressure = 1000):
         self.kp = kp
         self.ki = ki
         self.kd = kd
         self.dt = dt
+        self.sollwert = max(sollwert, 1e-4)
         self.prev_error = 0.0
         self.integral = 0.0
+        self.ambient_pressure = ambient_pressure
+        self.integral_flag = False
+        self.integral_startvalue = self.sollwert + (abs(self.ambient_pressure - self.sollwert) *0.05)
+        self.p_anteil = None
+        self.i_anteil = None
+        self.d_anteil = None
 
-    def logarithmicPID(self, sollwert, istwert):
-        safe_sollwert = max(sollwert, 1e-4)
+        
+
+    def logarithmicPID(self, istwert):
+        
         safe_istwert = max(istwert, 1e-4)
         
-        error = np.log10(safe_sollwert) - np.log10(safe_istwert)
-        rel_error = (sollwert - istwert) / sollwert
+        if (safe_istwert < self.integral_startvalue and self.integral_flag == False):
+            self.integral_flag = True
+        
 
-        self.integral += error*self.dt    
+        error = np.log10(self.sollwert) - np.log10(safe_istwert)
+        rel_error = (self.sollwert - istwert) / self.sollwert
+
+        if self.integral_flag == True:
+            self.integral += error*self.dt
+        else:
+            print(f"flag ({self.integral_startvalue}) mBar wurde noch nocht ausgelöst...")
+            self.integral = 0    
         derivative = (error - self.prev_error)/self.dt
-        output = (self.kp*error)+(self.ki*self.integral)+(self.kd*derivative)
+        self.p_anteil = self.kp*error
+        self.i_anteil = self.ki*self.integral
+        self.d_anteil = self.kd*derivative
+        output = self.p_anteil + self.i_anteil + self.d_anteil
         self.prev_error = error
         return output, rel_error, derivative, self.integral
 
@@ -37,6 +57,7 @@ class ControllSystem:
     def reset(self):
         self.prev_error = 0.0
         self.integral = 0.0
+        self.integral_flag = False
     
 
 class Interpolation:
@@ -46,6 +67,10 @@ class Interpolation:
         self.druck = None
         self.sollwert = sollwert
         self.v_ein = None
+        self.max_steigung = None
+        self.druck_bei_max_steigung = None
+        self.steigung_v_ein = None
+        
 
 
     def interpolierte_Funktion(self,ventilspannungen, druck):
@@ -80,9 +105,9 @@ class Interpolation:
             print("Fehler bei der Interpolation")
             return None, None
 
-    def steigung(self):
-        if len(self.ventilspannungen) > 1:
-            x_interp, y_pchip = self.x_interpoliert()
+    def steigung(self, ventilspannungen, druck):
+        if len(ventilspannungen) > 1:
+            x_interp, y_pchip = self.x_interpoliert(ventilspannungen, druck)
             if x_interp is None or y_pchip is None:
                 print("Fehler bei der Interpolation. Steigungsberechnung nicht möglich.")
                 return None, None
@@ -97,24 +122,22 @@ class Interpolation:
             dp_dv.append(dp_dv[-1])
             
             max_idx = np.argmax(dp_dv)
-            max_steigung = abs(dp_dv[max_idx])
+            self.max_steigung = abs(dp_dv[max_idx])
             max_volt = x_interp[max_idx]
-            max_druck = y_pchip[max_idx]
+            self.druck_bei_max_steigung = y_pchip[max_idx]
 
             idx_v_ein = np.abs(x_interp - self.v_ein).argmin()
-            steigung_v_ein = abs(dp_dv[idx_v_ein])
+            self.steigung_v_ein = abs(dp_dv[idx_v_ein])
 
             print("\n=======================================================")
-            print(f"-> Höchste Steigung:  {max_steigung:.4f} mBar/V")
+            print(f"-> Höchste Steigung:  {self.max_steigung:.4f} mBar/V")
             print(f"-> Bei Spannung:      {max_volt:.6f} V")
-            print(f"-> Bei Druck:         {max_druck:.4f} mBar")
-            print(f"-> Steigung Sollwert: {steigung_v_ein:.4f} mBar/V")
+            print(f"-> Bei Druck:         {self.druck_bei_max_steigung:.4f} mBar")
+            print(f"-> Steigung Sollwert: {self.steigung_v_ein:.4f} mBar/V")
             print(f"-> Bei Spannung:      {self.v_ein:.6f} V")
             print(f"-> Bei Druck:         {self.sollwert:.4f} mBar")
-            return max_steigung, steigung_v_ein
         else:
             print("Nicht genügend Datenpunkte für die Steigungsberechnung.")
-            return None, None
 class Eingabe:
     @staticmethod
     def druckeingabe ():

@@ -1,0 +1,9 @@
+Sollwert (mBar): 470.0
+Steigung bei Sollwert (mBar/V): 1801.3326121188406
+Druck bei max Steigung (mBar): 470.7930615128857
+Max Steigung (mBar/V): 1801.3326121188406
+Alter Kp-wert (prev_kp): 0.8
+Neu angepasster Kp-wert (Kp): 0.8
+Integralbeiwert (Ki):  0.05
+Differentialbeiwert (Kd): 0.01
+Abtastzeit (dt):  0.1

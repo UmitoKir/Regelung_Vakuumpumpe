@@ -1,7 +1,7 @@
 import nidaqmx
 import time
 
-class Valvecontrol:
+class ValveControl:
     def __init__(self, valve_name = "Dev1_MSA", ao0_name = "ao0", ao1_name = "ao1"):
         self.valve_name = valve_name
         self.channel_name_0 = f"{valve_name}/{ao0_name}"
@@ -29,8 +29,8 @@ class Valvecontrol:
         if self.task is None:
             print("Ventile nicht initialisiert....")
             return False
-        v_durchlass = max(0.0, min(10.0, float(v_durchlass)))
-        v_einlass = max(0.0, min(10.0, float(v_einlass)))
+        v_durch = max(0.0, min(10.0, float(v_durch)))
+        v_ein = max(0.0, min(10.0, float(v_ein)))
 
         try: 
             self.task.write([v_durch, v_ein])
@@ -41,19 +41,19 @@ class Valvecontrol:
         
     def ambientPressure(self):
         print("ao0: 0 , ao1: 5.5")
-        self.applyVoltages(0.0, 5.0)
+        self.applyVoltage(0.0, 5.0)
         time.sleep(5)
         
         print("ao0: 0 , ao1: 7")
-        self.applyVoltages(0.0, 6.0)
+        self.applyVoltage(0.0, 6.0)
         time.sleep(5)
         
         print("ao0: 0 , ao1: 7")
-        self.applyVoltages(0.0, 7.0)
+        self.applyVoltage(0.0, 7.0)
         time.sleep(4)
 
         print("ao0: 0 , ao1: 10")
-        self.applyVoltages(0.0, 10.0)
+        self.applyVoltage(0.0, 10.0)
         time.sleep(3)
 
     def shutdown(self):
@@ -61,7 +61,7 @@ class Valvecontrol:
             self.task.write([0.0, 0.0])
             return True 
         except Exception as e:
-            print("Fehler bei Schließung der Ventile: {e}")
+            print(f"Fehler bei Schließung der Ventile(shutdown): {e}")
             return False
     def close(self):
         if self.task is not None:
@@ -76,7 +76,7 @@ class Valvecontrol:
                 self.task = None
 
 if __name__ == "__main__":
-    valves = Valvecontrol()
+    valves = ValveControl()
     task_completed = False
     try:    
         if not valves.connect():

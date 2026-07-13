@@ -2,46 +2,21 @@
 #install all the necessary libaries and debugger/compiler(python, python debugger, git etc.) to get it running on VS code
 #install with py -m pip install in the terminal all the necessary packages
 #matplotlib maybe also required
-
-import time
-import numpy as np
-import nidaqmx
-import serial
-import serial.tools.list_ports
-import matplotlib.pyplot as plt
 import csv
+import time
+import numpy as np 
+import PressureSensor
+import ValveControl
+import CSVManager
 
-#der folgende Absatz sucht den usb port aus an dem sie die Vakuumpumpe aneschlossen haben
-ports = list(serial.tools.list_ports.comports()) #ruft eine Liste mit allen existierenden Anschlüssen an Ihrem Computer ab
-sp=None
-#durch Vergleichen der Namen von allen Anschlüssen mit dem Namen vom Adapter RS232 zu usb wählt es den richtigen Port aus.
-print(f'Liste der angeschlossenen Geräte: {ports}')
-for p in ports: 
-    print(p)
-    if 'ATEN'in p.description:
-        print(f'this is the Device: {p.device}')
-        sp=p.device
-    if sp is None:
-        print('Das Gerät wurde nicht gefunden.')
 
-br = 38400
-to = 1
-
-dt = 1
-old_pressure = 1000
-
-raw_array =b""
-resp_array = ""
-response_array = ""
-
-Dauer = 1800.0
 #10, 9.5, 9, 8.5, 8, 
 #0, 0.5, 1, 1.5, 2, 
-ventilspannungen1 = [10.0, 9, 8, 7.549, 7.381, 7.291, 7.234, 7.164, 7.034, 6.618, 6.130, 6.074, 
+ventilspannungen1 = [8, 7.549, 7.381, 7.291, 7.234, 7.164, 7.034, 6.618, 6.130, 6.074, 
                      6.013, 5.951, 5.891, 5.825, 5.746, 5.648, 5.522, 5.358, 5.331, 5.301, 5.266, 5.226, 
                      5.181, 5.129, 5.072, 5.008, 4.928, 4.909, 4.886, 4.858, 4.824, 4.784, 4.738, 4.684, 
                      4.622, 4.552, 4.545, 4.537, 4.530, 4.522, 4.514, 4.506, 4, 3, 2, 1, 0]
-ventilspannungen2 = [0, 1, 2, 3, 3.483, 3.738, 3.882, 4.022, 4.161, 4.294, 4.462, 4.664,
+ventilspannungen2 = [3, 3.483, 3.738, 3.882, 4.022, 4.161, 4.294, 4.462, 4.664,
                      4.692, 4.723, 4.758, 4.799, 4.845, 4.897, 4.956, 5.018, 5.113, 5.134, 5.159, 5.187,
                      5.219, 5.255, 5.295, 5.341, 5.392, 5.448, 5.454, 5.460, 5.466, 5.472, 5.478, 5.484,
                      5.491, 5.497, 5.657, 5.720, 5.795, 5.882, 5.980, 6.181, 6.597, 7, 8, 9, 10]
@@ -50,183 +25,79 @@ counter_limit = 200
 untere_hystere = False
 obere_hystere = False
 
-csv_buffer = [] 
+class CSVDatei(CSVManager.CreateFile):
+    def writeToCSV(self, zeit, druck, v_durchlass, v_einlass, duration, response):
+        t_str = f"{zeit:.3f}".replace('.', ',')
+        p_str = f"{druck:.5f}".replace('.', ',')
+        vd_str = f"{v_durchlass:.4f}".replace('.', ',')
+        ve_str = f"{v_einlass:.4f}".replace('.', ',')
+        if duration == None: 
+            dur_str = ""
+        else: 
+            dur_str = f"{duration:.3f}".replace('.', ',')
+        response_str = f"{response}".replace('.', ',')
+        self.buffer.append([t_str, p_str, vd_str, ve_str, dur_str, response_str]) 
+        try:
+            with open(self.full_path, mode='a', newline='', encoding = "utf-8") as f:
+                writer = csv.writer(f, delimiter=';')
+                while self.buffer:
+                    writer.writerow(self.buffer[0])
+                    self.buffer.pop(0)
+        except PermissionError:
+            print("Fehler: CSV Datei konnte nicht geöffnet werden. (Ist die Datei parallel geöffnet?)")
+            pass
+    
 
-def getpressure(ser): #"Druckauslesebefehl"
-    global raw_array, resp_array, response_array
-    try:
-        raw = ser.readline()
-        raw_array = raw
-        resp = raw.decode('utf-8', errors='ignore') #liest die Werte vom CenterThree
-        resp_array = resp
-        response = resp.strip()
-        response_array = response
+def Druck_abfahren(sensor, valves, CSVFile, v_durch, v_ein, startzeit, current_step, total_steps):
+    max_dauer = 240
+    counter_limit = 450
+    startzeit_neuer_druck = time.time() - startzeit
+    lokale_zeit = time.time() - (startzeit_neuer_druck + startzeit)
+    tangent_counter = 0
+    
+    valves.applyVoltage(v_durch, v_ein)
+    
+    istwert = sensor.getPressure()
+    compare_pressure =  istwert
 
-        #response = ser.readline().decode('utf-8').strip() #liest die Werte vom CenterThree
-        if response:
-            #print(f'Antwort: {response}')
-            values = response.split(",")
-            values = [float(values[i]) for i in (1,3)]
-            #print(f"Druckwerte: {values}")
-            return values
-        else:
-            print('keine Antwort. ')
-            ser.flushInput()
-            return None
-        return None
-    except (ValueError, UnicodeDecodeError, IndexError) as e:
-        print(f"Fehler bei der Druckauslesung: {e} | {response if 'response' in locals() else 'unbekannt'}" )
-        ser.flushInput() # Puffer leeren 
-        return None
+    while(istwert > 0.001) and (lokale_zeit < max_dauer) and (tangent_counter <= counter_limit):
+        istwert = sensor.getPressure()
+        lokale_zeit = time.time() -  (startzeit_neuer_druck + startzeit)
+        #Stabilitätscheck
+        schwankung = (istwert - sensor.oldpressure)/sensor.oldpressure
+        schwankung_in_relation_zum_vergleich = (istwert - compare_pressure)/compare_pressure
 
-def Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, lokale_zeit, filename, current_step, total_steps):
-        
-        global old_pressure, Dauer, csv_buffer, raw_array, resp_array, response_array, counter_limit
-        Endzeit = Startzeit_neuer_Druck + Dauer
-        tangent_counter = 0
-        
-        task.write([v_durch, v_ein])
-        
-        retry_count = 0 
-        pressure = getpressure(ser)
-        while pressure is None and retry_count < 20:
-            pressure = getpressure(ser)
-            if pressure is None:
-                retry_count += 1
-                time.sleep(0.1)
-        
-        if pressure is None: 
-            print("Kritischer Fehler: Antwort vom Sensor auch nach 20 versuchen nicht sauber")
-            try: 
-                with open (filename, mode='a', newline='') as f:
-                    writer = csv.writer(f, delimiter=';')
-                    writer.writerow([f"{lokale_zeit:.3f}".replace('.', ','), "ERROR", 0, 0, "Sensor Timeout", "", "", ""])
-            except PermissionError :
-                print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
-                pass
-            return
-
-        istWert = sensorwahl_mit_hysterese(pressure)
-        compare_pressure =  istWert
-
-        while(tangent_counter < counter_limit) and (lokale_zeit < Endzeit) and (istWert >= 0.0005):
-            retry_count = 0 
-            pressure = getpressure(ser)
-            while pressure is None and retry_count < 20:
-                retry_count += 1
-                time.sleep(0.1)
-                pressure = getpressure(ser)
-        
-            if pressure is None: 
-                print("Kritischer Fehler: Antwort vom Sensor auch nach 20 versuchen nicht sauber")
-                try: 
-                    with open (filename, mode='a', newline='') as f:
-                        writer = csv.writer(f, delimiter=';')
-                        writer.writerow([f"{lokale_zeit:.3f}".replace('.', ','), "ERROR", 0, 0, "Sensor Timeout", "", "", ""])
-                except PermissionError :
-                    print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
-                return
-
-            istWert = sensorwahl_mit_hysterese(pressure) 
-            
-            #Stabilitätscheck
-            schwankung = (istWert - old_pressure)/old_pressure if old_pressure != 0 else 0
-            schwankung_in_relation_zum_vergleich = (istWert - compare_pressure)/compare_pressure if compare_pressure != 0 else 0
-
-            
-            if istWert < 7.5 * 1e-4:
-                fehler_grenze = 0.02
-            elif istWert < 1e-3:
-                fehler_grenze = 0.0134
-            elif istWert < 2.5*1e-3:
-                fehler_grenze = 0.01
-            elif istWert < 5*1e-3:
-                fehler_grenze = 0.004
-            elif istWert < 7.5*1e-3:
-                fehler_grenze = 0.002
-            elif istWert < 1e-2:
-                fehler_grenze = 0.0015
-            elif istWert < 2.5*1e-2:
-                fehler_grenze = 0.001
-            elif istWert < 5*1e-2:
-                fehler_grenze = 0.0004
+        if abs(schwankung) <= sensor.fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= sensor.rel_fehler_grenze:
+            if (tangent_counter == counter_limit) or lokale_zeit > max_dauer - 1.5:
+                duration = lokale_zeit
             else: 
-                fehler_grenze = 0.0002
+                duration = None
+            tangent_counter += 1
+        elif (abs(schwankung) > sensor.fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > sensor.rel_fehler_grenze):
+            tangent_counter = 0
+            compare_pressure = istwert
+            duration = None
 
-            rel_fehler_grenze = 5 * fehler_grenze
+        CSVFile.writeToCSV(
+            zeit = lokale_zeit + startzeit_neuer_druck, 
+            druck = istwert, 
+            v_durchlass =v_durch, 
+            v_einlass = v_ein, 
+            duration = duration, 
+            response = sensor.response_array
+            ) 
+        
+        print(f"V_Einlass: {v_ein:.3f} V | V_Durch: {v_durch:.3f} V | Druck: {istwert:.5f} mBar")
+        print(f"Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f} ") 
+        print(f"Dauer der Stufe: {lokale_zeit:.3f} s | Tangent Counter: {tangent_counter} | Runde: {current_step} von {total_steps} ")
+        print()
 
-            if abs(schwankung) <= fehler_grenze and abs(schwankung_in_relation_zum_vergleich) <= rel_fehler_grenze and tangent_counter <counter_limit:  # Nur wenn die Ableitung signifikant ist
-                tangent_counter += 1
-            elif (abs(schwankung) > fehler_grenze or abs(schwankung_in_relation_zum_vergleich) > rel_fehler_grenze) and tangent_counter >=0:
-                tangent_counter = 0
-                compare_pressure = istWert
-            
-            druckeinstelldauer = lokale_zeit - Startzeit_neuer_Druck
-            
-            t_str = f"{lokale_zeit:.3f}".replace('.', ',')
-            p_str = f"{istWert:.5f}".replace('.', ',')
-            vd_str = f"{v_durch:.2f}".replace('.', ',')
-            ve_str = f"{v_ein:.2f}".replace('.', ',')
-            if tangent_counter >= counter_limit or lokale_zeit > Endzeit - 1.5:
-                dur_str = f"{(druckeinstelldauer):.3f}".replace('.', ',')  
-            else:
-                dur_str = ""
-
-            raw_str = str(raw_array).replace('.', ',')
-            resp_str = str(resp_array).replace('.', ',') if resp_array else ''
-            response_str = str(response_array).replace('.', ',')  if response_array else ''
-
-            csv_buffer.append([t_str, p_str, vd_str, ve_str, dur_str, raw_str, resp_str, response_str])
-
-            try: 
-                with open (filename, mode='a', newline='') as f:
-                    writer = csv.writer(f, delimiter=';')
-                    while csv_buffer:
-                        writer.writerow(csv_buffer[0])
-                        csv_buffer.pop(0)
-            except PermissionError :
-                print("Fehler: CSV Datei konnte nicht geöffnet werden. (Datei offen?)")
-                pass
-            
-            old_pressure = istWert
-            print(f" V_Einlass: {v_ein:.2f} V | V_Durch: {v_durch:.2f} V | Druck: {istWert:.5f} mBar | Dauer der Stufe: {druckeinstelldauer:.3f} s | Tangent Counter: {tangent_counter} | Schwankung: {schwankung:.5f} | rel. Schwankung zu Vergleichswert: {schwankung_in_relation_zum_vergleich:.5f} | Runde: {current_step} von {total_steps} ")
-            print()
-
-            while time.time() - Startzeit - lokale_zeit < dt:
-                time.sleep(0.001)
-            lokale_zeit = time.time() - Startzeit
-
-
-def sensorwahl_mit_hysterese(pressure):
-    global untere_hystere, obere_hystere, old_pressure
-
-    istWert = old_pressure
-
-    if pressure[0]>= 1.0: # ab >= 1mBar immer sensor 1 verwenden
-        istWert = pressure[0] 
-        untere_hystere = False
-        #print("Sensor HP")
-    elif pressure[1]< 0.5: #ab <0.5mBar immer sensor 2 verwenden
-        istWert = pressure[1]
-        obere_hystere = False
-        #print("Sensor LP")
-    elif pressure[1] >= 0.5 and old_pressure < pressure[1] and old_pressure < 0.5: #wenn man von < 0.5mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
-        istWert = pressure[1]
-        untere_hystere = True
-        #print("Sensor LP")
-    elif pressure[1] >= 0.5 and untere_hystere == True: #wenn man von < 0.5mBar kommt und < 1.0mBar ist. -> sensor 2 verwenden
-        istWert = pressure[1]
-        #print("Sensor LP")
-    elif pressure[0] < 1.0 and old_pressure >= pressure[0] and old_pressure >=1.0: #wenn man von > 1.0mBar kommt und > 0.1mBar ist. -> sensor 1 verwenden
-        istWert = pressure[0]
-        obere_hystere = True
-        #print("Sensor HP")
-    elif pressure[0] < 1.0 and obere_hystere == True: #wenn man
-        istWert = pressure[0]
-        #print("Sensor HP")
-    if istWert <=0:
-        istWert = 1e-4
-    return istWert
+        wartezeit = startzeit_neuer_druck + lokale_zeit + startzeit
+        while time.time() - wartezeit < 0.093:
+            time.sleep(0.01)
+        itaration_duration = time.time() - (startzeit_neuer_druck + lokale_zeit + startzeit)        
+        print(f"Dauer einer iteration(dt): {itaration_duration:.4f}")
+        
 
        
 
@@ -234,59 +105,52 @@ def sensorwahl_mit_hysterese(pressure):
 
 def main():
     global ventilspannungen1, ventilspannungen2
-    filename = f"3D_messung_{time.strftime('%Y%m%d-%H%M%S')}.csv"
-    with open(filename, mode='w', newline='') as f:
-        writer = csv.writer(f, delimiter=';')
-        writer.writerow(['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Dauer bis Druckstabilitaet_s', 'raw', 'resp', 'response'])
+
+    CSVFile = CSVDatei()
+    csv_spalten = ['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Dauer','response']
+    CSVFile.allocateCSV(stringchain=csv_spalten)
+
+    sensor = PressureSensor.PressureSensor()
+    valves = ValveControl.ValveControl()
+    task_completed = False
 
     try:
-        ser = serial.Serial(port=sp, baudrate=br, timeout=to) #stellt Verbindung mit der Vakuumpumpe her (öffnet Chanel)
-        print(f'Verbindung hergestellt mit {sp}')
-
-        system = nidaqmx.system.System.local()
-        for dev in system.devices:
-            print(dev.name, "-", dev.product_type)
+        if not sensor.connect():
+            raise RuntimeError("Verbindung zum Drucksensor fehlgeschlagen.")
         
-        print("neu start:")
-        with nidaqmx.Task() as task:
-            task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao0") 
-            task.ao_channels.add_ao_voltage_chan(f"Dev1_MSA/ao1")
-            task.start()
-           
-            total_steps = len(ventilspannungen2) * len(ventilspannungen1)
-            current_step = 0
-            Startzeit = time.time()
-            
-            for v_durch in ventilspannungen2:
-                for  v_ein in ventilspannungen1:
-                    current_step += 1
-                    Startzeit_neuer_Druck = time.time() - Startzeit
-                    Druck_abfahren(ser,task, dt, v_durch, v_ein, Startzeit, Startzeit_neuer_Druck, Startzeit_neuer_Druck, filename, current_step, total_steps)
-                task.write([0.0, 5.0])  # umgebungsdruck wiederherstellen
-                time.sleep(20)  
-                task.write([0.0, 7.0])  # umgebungsdruck wiederherstellen
-                time.sleep(20) 
-                task.write([0.0, 10.0])  # umgebungsdruck wiederherstellen
-                time.sleep(10) 
+        if not valves.connect():
+            raise RuntimeError("Ventil-Initialisierung fehlgeschlagen.")
 
-            task.stop()
-        #input("Enter drücken zum Beenden...")
+        total_steps = len(ventilspannungen1) #* len(ventilspannungen1)
+        current_step = 0
+        startzeit = time.time()
+            
+        #for v_durch in ventilspannungen2:
+        for v_ein in ventilspannungen1:
+            v_durch = 10.0 - v_ein
+            current_step += 1
+            Druck_abfahren(sensor = sensor, 
+                            valves = valves, 
+                            CSVFile = CSVFile, 
+                            v_durch = v_durch, 
+                            v_ein = v_ein, 
+                            startzeit = startzeit, 
+                            current_step = current_step, 
+                            total_steps = total_steps
+                            )            
+                
+        valves.ambientPressure() 
+        task_completed = True
+        if task_completed:
+            print('Erfolgreich abgeschlossen. Verbindung wird beendet')
     except KeyboardInterrupt:
         print("Programm unterbrochen.")
-    except serial.SerialException as e:
-        print(f'Fehler: {e}')
+        valves.ambientPressure()
     except UnicodeDecodeError as e:
         print(f'Fehler bei der Dekodierung: {e}')
     finally:
-        try:
-            if 'task' in locals(): 
-                task.write([0.0, 0.0])  # Alle Ausgänge auf 0 setzen
-                task.stop()
-            if 'ser' in locals() and ser.is_open:
-                ser.close()
-                print('Verbindung closed. ')
-        except Exception:
-            pass
-
+        valves.shutdown()  # Alle Ausgänge auf 0 setzen
+        valves.close()
+        sensor.disconnect()
 
 main()

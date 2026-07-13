@@ -17,18 +17,19 @@ Stellgröße = []
 def get_arrays_from_csv(dateipfad):
     global zeit, Druck, Ventilspannung_Durchlass, Ventilspannung_Einlass, Stellgröße
     try:
-        df = pd.read_csv(dateipfad, sep=';', decimal=',', encoding='cp1252', on_bad_lines='skip')
+        spalten = ['Zeit_s', 'Druck_mBar', 'V_Durchlass', 'V_Einlass', 'Stellgröße', 'response']
+        df = pd.read_csv(dateipfad, sep=';', decimal=',', encoding='cp1252', on_bad_lines='skip', usecols=spalten)
         df.columns = df.columns.str.strip()  # Entfernt führende und nachfolgende Leerzeichen aus den Spaltennamen
         print("Gefundene Spalten in der CSV:", list(df.columns))
         # Helferfunktion, um Text-Spalten rigoros in echte Zahlen umzuwandeln
         def clean_to_nan_or_float(series):
             # Falls es schon Zahlen sind, direkt zurückgeben
             if np.issubdtype(series.dtype, np.number):
-                return series.values
-            # Falls es Text ist, Leerzeichen weg und zu numeric konvertieren
-            return pd.to_numeric(series.astype(str).str.replace(',', '.'), errors='coerce').values
+                return series.to_numpy(dtype=float)
+            clean_str = series.astype(str).str.strip()
+            return pd.to_numeric(clean_str, errors="coerce").to_numpy(dtype=float)
         
-        zeit = clean_to_nan_or_float(df['Zeit_s'])
+        zeit =clean_to_nan_or_float(df['Zeit_s'])
         Druck = clean_to_nan_or_float(df['Druck_mBar'])
         Ventilspannung_Durchlass = clean_to_nan_or_float(df['V_Durchlass'])
         Ventilspannung_Einlass = clean_to_nan_or_float(df['V_Einlass'])
@@ -54,7 +55,7 @@ def main():
     plt.figure(1,figsize=(10, 6))
     plt.plot(zeit, Druck, color='red', linewidth=1.5)
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Druckverlauf in mBar (lineare Y-Achse)")
+    plt.title("Druckverlauf in mBar (lineare Y-Achse)")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Druck [mbar]")
 
@@ -62,7 +63,7 @@ def main():
     plt.plot(zeit, Druck, color='red', linewidth=1.5)
     plt.yscale('log')
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Druckverlauf in mBar (logarithmische Y-Achse)")
+    plt.title("Druckverlauf in mBar (logarithmische Y-Achse)")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Druck [mbar]")
 
@@ -71,7 +72,7 @@ def main():
     plt.plot(zeit, Ventilspannung_Durchlass, color='blue', linewidth=1.5, label='Durchlassventil')
     plt.plot(zeit, Ventilspannung_Einlass, color='red', linewidth=1.5, label='Einlassventil')
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Ventilspannungen im Verlauf der Zeit")
+    plt.title("Ventilspannungen im Verlauf der Zeit")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Spannung [V]")
     plt.legend()
@@ -79,7 +80,7 @@ def main():
     plt.figure(4,figsize=(10, 6))
     plt.plot(zeit, Stellgröße, color='blue', linewidth=1.5)
     plt.grid(True, which="both", ls="-", alpha=0.5)
-    plt.title(f"Stellgröße im Verlauf der Zeit")
+    plt.title("Stellgröße im Verlauf der Zeit")
     plt.xlabel("Zeit [s]")
     plt.ylabel("Stellgröße [V]")
     plt.tight_layout()
